@@ -1,16 +1,18 @@
 {
-    "collector path": "D:\\FanucPlugin\\fanuc\\FanucJsonCollector.exe",
+    "collector path": "C:\\Program Files\\InfluxData\\telegraf\\fanuc collector\\FanucCollector.exe",
     "server":{
         "status": true
     },
     "devices": [
         {
             "address": "192.168.1.1",
-            "port": 8080
+            "port": 8080,
+            "series": "0i-F"
         },
         {
             "address": "192.168.1.2",
-            "port": 8081
+            "port": 8081,
+            "series": "0i-F"
         }
     ]
 }

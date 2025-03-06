@@ -10,17 +10,18 @@ import (
 )
 
 type Server struct {
-	Status  bool    `json:"status"`
-	TimeOut float32 `json:"timeout"`
+	Status bool `json:"status"`
 }
 
 type Device struct {
 	Address string `json:"address"`
 	Port    int    `json:"port"`
+	Series  string `json:"series"`
 }
 
 type Config struct {
 	CollectorPath string   `json:"collector path"`
+	TimeOut       float32  `json:"timeout"`
 	Server        Server   `json:"server"`
 	Devices       []Device `json:"devices"`
 }
@@ -67,6 +68,6 @@ func main() {
 
 		fmt.Println(string(output))
 
-		time.Sleep(time.Second * 5)
+		time.Sleep(time.Second * time.Duration(config.TimeOut))
 	}
 }

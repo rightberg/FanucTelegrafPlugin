@@ -229,6 +229,7 @@ func UpdateDeviceNodes(col_data *CollectorsData) {
 		UpdateValue(col_nodes[index].mode_nodes.AxisMotion, string(value.Mode.AxisMotion))
 		UpdateValue(col_nodes[index].mode_nodes.Mstb, string(value.Mode.LoadExcess))
 		UpdateValue(col_nodes[index].mode_nodes.LoadExcess, string(value.Mode.LoadExcess))
+		UpdateValue(col_nodes[index].mode_nodes.ModeErr, string(value.Mode.ModeErr))
 		//program data
 		UpdateValue(col_nodes[index].prog_nodes.Frame, string(value.Program.Frame))
 		UpdateValue(col_nodes[index].prog_nodes.MainProgNumber, int64(value.Program.MainProgNumber))
@@ -236,6 +237,7 @@ func UpdateDeviceNodes(col_data *CollectorsData) {
 		UpdateValue(col_nodes[index].prog_nodes.PartsCount, int64(value.Program.PartsCount))
 		UpdateValue(col_nodes[index].prog_nodes.ToolNumber, int64(value.Program.ToolNumber))
 		UpdateValue(col_nodes[index].prog_nodes.FrameNumber, int64(value.Program.FrameNumber))
+		UpdateValue(col_nodes[index].prog_nodes.PrgErr, string(value.Program.PrgErr))
 		//axis data
 		UpdateValue(col_nodes[index].axis_nodes.FeedRate, int64(value.Axes.FeedRate))
 		UpdateValue(col_nodes[index].axis_nodes.FeedOverride, int64(value.Axes.FeedOverride))
@@ -243,6 +245,7 @@ func UpdateDeviceNodes(col_data *CollectorsData) {
 		UpdateValue(col_nodes[index].axis_nodes.JogSpeed, int64(value.Axes.JogSpeed))
 		UpdateValue(col_nodes[index].axis_nodes.CurrentLoad, float64(value.Axes.CurrentLoad))
 		UpdateValue(col_nodes[index].axis_nodes.CurrentLoadPercent, float64(value.Axes.CurrentLoadPercent))
+		UpdateValue(col_nodes[index].axis_nodes.AxesErr, string(value.Axes.AxesErr))
 	}
 }
 

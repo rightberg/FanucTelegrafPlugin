@@ -1,5 +1,6 @@
 {
-    "collector path": "C:\\Program Files\\InfluxData\\telegraf\\fanuc collector\\FanucCollector.exe",
+    "collector path": "path\\to\\FanucCollectorPlus.exe",
+	"timeout": 5,
     "server":{
         "status": true
     },

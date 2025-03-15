@@ -42,6 +42,7 @@ type ModeNodes struct {
 	AxisMotion *server.Node
 	Mstb       *server.Node
 	LoadExcess *server.Node
+	ModeErr    *server.Node
 }
 
 type ProgramNodes struct {
@@ -51,6 +52,7 @@ type ProgramNodes struct {
 	PartsCount     *server.Node
 	ToolNumber     *server.Node
 	FrameNumber    *server.Node
+	PrgErr         *server.Node
 }
 
 type AxisNodes struct {
@@ -61,6 +63,7 @@ type AxisNodes struct {
 	CurrentLoad        *server.Node
 	CurrentLoadPercent *server.Node
 	ServoLoads         *server.Node
+	AxesErr            *server.Node
 }
 
 type CollectorNodes struct {
@@ -291,6 +294,9 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 		load_excess_val := collectors[index].Mode.LoadExcess
 		col_ns.mode_nodes.LoadExcess = AddVariableNode(node_ns, mode_folder, "load_excess", load_excess_val)
 
+		mode_err_val := string(collectors[index].Mode.ModeErr)
+		col_ns.mode_nodes.ModeErr = AddVariableNode(node_ns, mode_folder, "mode_err", mode_err_val)
+
 		//program data folder + variables
 		program_folder := GetFolderNode(node_ns.ID(), "program_data", "Program Data")
 		node_ns.AddNode(program_folder)
@@ -314,6 +320,9 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 		frame_number_val := int64(collectors[index].Program.FrameNumber)
 		col_ns.prog_nodes.FrameNumber = AddVariableNode(node_ns, program_folder, "frame_number", frame_number_val)
 
+		frame_err_val := string(collectors[index].Axes.AxesErr)
+		col_ns.prog_nodes.PrgErr = AddVariableNode(node_ns, program_folder, "prg_err", frame_err_val)
+
 		//axes data folder + variables
 		axes_folder := GetFolderNode(node_ns.ID(), "axes_data", "Axes Data")
 		node_ns.AddNode(axes_folder)
@@ -336,6 +345,9 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 
 		current_load_percent_val := float64(collectors[index].Axes.CurrentLoadPercent)
 		col_ns.axis_nodes.CurrentLoadPercent = AddVariableNode(node_ns, axes_folder, "current_load_percent", current_load_percent_val)
+
+		axes_err_val := string(collectors[index].Axes.AxesErr)
+		col_ns.axis_nodes.AxesErr = AddVariableNode(node_ns, axes_folder, "axes_err", axes_err_val)
 
 		col_nodes = append(col_nodes, col_ns)
 	}

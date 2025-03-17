@@ -122,7 +122,7 @@ func main() {
 
 		output, err := cmd.Output()
 		if err != nil {
-			fmt.Printf("Error occurred: %s\n", err.Error())
+			fmt.Printf("Ошибка сборщика: %s\n", err.Error())
 			panic(err)
 		}
 

@@ -1,5 +1,5 @@
 {
-    "collector path": "path\\to\\FanucCollectorPlus.exe",
+    "collector path": "path/to/FanucCollectorPlus.exe",
 	"timeout": 5,
     "server":{
         "status": true

@@ -187,20 +187,47 @@ func inicialize() {
 }
 
 func AddVariableNode(node_ns *server.NodeNameSpace, node *server.Node, name string, value any) *server.Node {
-	variable := node_ns.AddNewVariableNode(name, value)
-	variable.SetDescription("Description", name)
+	parent_id := node.ID().StringID()
+	if parent_id != "" {
+		parent_id += "/"
+	}
+	node_id := ua.NewStringExpandedNodeID(node_ns.ID(), parent_id+name)
+	attributes := map[ua.AttributeID]*ua.DataValue{
+		ua.AttributeIDNodeID:          server.DataValueFromValue(node_id),
+		ua.AttributeIDNodeClass:       server.DataValueFromValue(uint32(ua.NodeClassVariable)),
+		ua.AttributeIDBrowseName:      server.DataValueFromValue(attrs.BrowseName(name)),
+		ua.AttributeIDDisplayName:     server.DataValueFromValue(attrs.DisplayName(name, name)),
+		ua.AttributeIDDescription:     server.DataValueFromValue(&ua.LocalizedText{Locale: name, Text: name}),
+		ua.AttributeIDValue:           server.DataValueFromValue(value),
+		ua.AttributeIDDataType:        server.DataValueFromValue(node_id),
+		ua.AttributeIDWriteMask:       server.DataValueFromValue(uint32(0)),
+		ua.AttributeIDUserWriteMask:   server.DataValueFromValue(uint32(0)),
+		ua.AttributeIDAccessLevel:     server.DataValueFromValue(uint8(0x05)),
+		ua.AttributeIDUserAccessLevel: server.DataValueFromValue(uint8(0x05)),
+		ua.AttributeIDHistorizing:     server.DataValueFromValue(bool(false)),
+		ua.AttributeIDValueRank:       server.DataValueFromValue(int32(-1)),
+	}
+	variable := server.NewNode(ua.NewNodeIDFromExpandedNodeID(node_id), attributes, nil, nil)
+	variable.SetAttribute(ua.AttributeIDValue, server.DataValueFromValue(value))
+	node_ns.AddNode(variable)
 	node.AddRef(variable, id.HasComponent, true)
 	return variable
 }
 
-func GetFolderNode(node_id uint16, key string, name string) *server.Node {
-	folder_id := ua.NewStringNodeID(node_id, key)
+func GetFolderNode(node_ns *server.NodeNameSpace, node *server.Node, name string) *server.Node {
+	parent_id := node.ID().StringID()
+	if parent_id != "" {
+		parent_id += "/"
+	}
+	folder_id := ua.NewStringNodeID(node_ns.ID(), parent_id+name)
 	attributes := map[ua.AttributeID]*ua.DataValue{
-		ua.AttributeIDNodeClass:  server.DataValueFromValue(uint32(ua.NodeClassObject)),
-		ua.AttributeIDBrowseName: server.DataValueFromValue(attrs.BrowseName(name)),
+		ua.AttributeIDNodeClass:   server.DataValueFromValue(uint32(ua.NodeClassObject)),
+		ua.AttributeIDBrowseName:  server.DataValueFromValue(attrs.BrowseName(name)),
+		ua.AttributeIDDescription: server.DataValueFromValue(&ua.LocalizedText{Locale: name, Text: name}),
 	}
 	folder := server.NewNode(folder_id, attributes, nil, nil)
-	folder.SetDescription("Description", "ru")
+	node_ns.AddNode(folder)
+	node.AddRef(folder, id.HasComponent, true)
 	return folder
 }
 
@@ -255,9 +282,7 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 	for index := range collectors {
 		var str_index = strconv.Itoa(index)
 		var col_ns CollectorNodes
-		device_folder := GetFolderNode(node_ns.ID(), "device "+str_index, "Device "+str_index)
-		node_ns.AddNode(device_folder)
-		node_obj.AddRef(device_folder, id.HasComponent, true)
+		device_folder := GetFolderNode(node_ns, node_obj, "device_"+str_index)
 
 		address_val := string(collectors[index].Device.Address)
 		col_ns.address = AddVariableNode(node_ns, device_folder, "address", address_val)
@@ -269,9 +294,7 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 		col_ns.series = AddVariableNode(node_ns, device_folder, "series", series_val)
 
 		//mode data folder + variables
-		mode_folder := GetFolderNode(node_ns.ID(), "mode_data ", "Mode Data ")
-		node_ns.AddNode(mode_folder)
-		device_folder.AddRef(mode_folder, id.HasComponent, true)
+		mode_folder := GetFolderNode(node_ns, device_folder, "mode_data")
 
 		mode_val := collectors[index].Mode.Mode
 		col_ns.mode_nodes.Mode = AddVariableNode(node_ns, mode_folder, "mode", mode_val)
@@ -301,9 +324,7 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 		col_ns.mode_nodes.ModeErr = AddVariableNode(node_ns, mode_folder, "mode_err", mode_err_val)
 
 		//program data folder + variables
-		program_folder := GetFolderNode(node_ns.ID(), "program_data", "Program Data")
-		node_ns.AddNode(program_folder)
-		device_folder.AddRef(program_folder, id.HasComponent, true)
+		program_folder := GetFolderNode(node_ns, device_folder, "program_data")
 
 		frame_val := string(collectors[index].Program.Frame)
 		col_ns.prog_nodes.Frame = AddVariableNode(node_ns, program_folder, "frame", frame_val)
@@ -327,9 +348,7 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 		col_ns.prog_nodes.PrgErr = AddVariableNode(node_ns, program_folder, "prg_err", frame_err_val)
 
 		//axes data folder + variables
-		axes_folder := GetFolderNode(node_ns.ID(), "axes_data", "Axes Data")
-		node_ns.AddNode(axes_folder)
-		device_folder.AddRef(axes_folder, id.HasComponent, true)
+		axes_folder := GetFolderNode(node_ns, device_folder, "axes_data")
 
 		feedrate_val := int64(collectors[index].Axes.FeedRate)
 		col_ns.axis_nodes.FeedRate = AddVariableNode(node_ns, axes_folder, "feedrate", feedrate_val)
@@ -361,7 +380,6 @@ func start() {
 		log.Fatalf("Error starting server, exiting: %s", err)
 	}
 	defer _server.Close()
-
 	sigch := make(chan os.Signal, 1)
 	signal.Notify(sigch, os.Interrupt)
 	defer signal.Stop(sigch)

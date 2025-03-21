@@ -1,5 +1,5 @@
 {
-    "collector path": "path/to/FanucCollectorPlus.exe",
+    "collector path": "D:/FanucTelegrafPlugin/FanucCollectorPlus/Release/FanucCollectorPlus.exe",
 	"timeout": 5,
     "server":{
         "status": true

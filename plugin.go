@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -106,6 +107,11 @@ func main() {
 		device_count := len(config.Devices)
 		collectors_data.Collectors = make([]CollectorData, device_count)
 		inicialize()
+
+		for index, collector := range col_nodes {
+			str_index := strconv.Itoa(index)
+			MakeCSV(GetTagsAtOpcNodes(collector), "device_"+str_index, execDir)
+		}
 		go start()
 	}
 

@@ -9,10 +9,12 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gopcua/opcua/debug"
@@ -367,6 +369,13 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 
 		current_load_percent_val := float64(collectors[index].Axes.CurrentLoadPercent)
 		col_ns.axis_nodes.CurrentLoadPercent = AddVariableNode(node_ns, axes_folder, "current_load_percent", current_load_percent_val)
+
+		var result []string
+		for k, v := range collectors[index].Axes.ServoLoads {
+			result = append(result, fmt.Sprintf("%s: %d", k, v))
+		}
+		finalString := strings.Join(result, ", ")
+		col_ns.axis_nodes.ServoLoads = AddVariableNode(node_ns, axes_folder, "servo_loads", finalString)
 
 		axes_err_val := string(collectors[index].Axes.AxesErr)
 		col_ns.axis_nodes.AxesErr = AddVariableNode(node_ns, axes_folder, "axes_err", axes_err_val)

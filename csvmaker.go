@@ -83,7 +83,7 @@ func MakeCSV(nodes []CSVNode, name string, plugin_path string) {
 	}
 	name += ".csv"
 
-	dir_path := filepath.Join(plugin_path, "CSV")
+	dir_path := filepath.Join(plugin_path, "csv")
 	file_path := filepath.Join(dir_path, name)
 
 	if _, err := os.Stat(dir_path); os.IsNotExist(err) {

@@ -110,8 +110,10 @@ func main() {
 	if config.Server.Status {
 		device_count := len(config.Devices)
 		collectors_data.Collectors = make([]CollectorData, device_count)
+		for index := range collectors_data.Collectors {
+			collectors_data.Collectors[index].Device.Name = config.Devices[index].Name
+		}
 		inicialize()
-
 		if config.Server.MakeCSV {
 			for index, collector := range col_nodes {
 				MakeCSV(GetTagsAtOpcNodes(collector), config.Devices[index].Name, plugin_dir)

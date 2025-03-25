@@ -13,7 +13,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"time"
 
@@ -288,12 +287,9 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 	node_obj := node_ns.Objects()
 	collectors := data.Collectors
 	for index := range collectors {
-		var str_index = strconv.Itoa(index)
 		var col_ns CollectorNodes
 
-		device_folder := GetFolderNode(node_ns, node_obj, "device_"+str_index)
-
-		//device data folder + variavles
+		device_folder := GetFolderNode(node_ns, node_obj, data.Collectors[index].Device.Name)
 		device_data_folder := GetFolderNode(node_ns, device_folder, "device_data")
 
 		name_val := string(collectors[index].Device.Name)

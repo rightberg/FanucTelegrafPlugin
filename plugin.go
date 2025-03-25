@@ -12,10 +12,12 @@ import (
 )
 
 type Server struct {
-	Status bool `json:"status"`
+	Status  bool `json:"status"`
+	MakeCSV bool `json:"make csv"`
 }
 
 type Device struct {
+	Name    string `json:"name"`
 	Address string `json:"address"`
 	Port    int    `json:"port"`
 	Series  string `json:"series"`
@@ -23,7 +25,7 @@ type Device struct {
 
 type Config struct {
 	CollectorPath string   `json:"collector path"`
-	UpdateTime    float32  `json:"timeout"`
+	Interval      float32  `json:"interval"`
 	Server        Server   `json:"server"`
 	Devices       []Device `json:"devices"`
 }
@@ -72,24 +74,19 @@ type CollectorsData struct {
 	Collectors []CollectorData `json:"collectors"`
 }
 
-type Metrics struct {
-	Timestamp int64   `json:"timestamp"`
-	Value     float64 `json:"value"`
-}
-
 var collectors_data CollectorsData
 
 func main() {
-	execPath, err := os.Executable()
+	plugin_path, err := os.Executable()
 	if err != nil {
 		fmt.Println("Ошибка при определении пути исполняемого файла:", err)
 		return
 	}
 
-	execDir := filepath.Dir(execPath)
-	plugin_path := filepath.Join(execDir, "plugin.json")
+	plugin_dir := filepath.Dir(plugin_path)
+	data_path := filepath.Join(plugin_dir, "plugin.json")
 
-	buffer, err := os.ReadFile(plugin_path)
+	buffer, err := os.ReadFile(data_path)
 	if err != nil {
 		fmt.Println("Не удалось открыть файл plugin.json:", err)
 		return
@@ -103,19 +100,30 @@ func main() {
 		return
 	}
 
+	for index := range config.Devices {
+		str_index := strconv.Itoa(index)
+		if config.Devices[index].Name == "" {
+			config.Devices[index].Name = "Device " + str_index
+		}
+	}
+
 	if config.Server.Status {
 		device_count := len(config.Devices)
 		collectors_data.Collectors = make([]CollectorData, device_count)
 		inicialize()
 
-		for index, collector := range col_nodes {
-			str_index := strconv.Itoa(index)
-			MakeCSV(GetTagsAtOpcNodes(collector), "device_"+str_index, execDir)
+		if config.Server.MakeCSV {
+			for index, collector := range col_nodes {
+				MakeCSV(GetTagsAtOpcNodes(collector), config.Devices[index].Name, plugin_dir)
+			}
 		}
 		go start()
 	}
 
 	collector_path := config.CollectorPath
+	if collector_path == "" {
+		collector_path = filepath.Join(plugin_dir, "collector", "collector.exe")
+	}
 
 	for {
 		jsonData, err := json.Marshal(config.Devices)
@@ -142,13 +150,7 @@ func main() {
 			UpdateDeviceNodes(&collectors_data)
 		}
 
-		tester, err := json.Marshal(collectors_data)
-		if err != nil {
-			fmt.Println("Ошибка чтения JSON:", err)
-			return
-		}
-
-		fmt.Fprintln(os.Stdout, string(tester))
-		time.Sleep(time.Second * time.Duration(config.UpdateTime))
+		fmt.Fprintln(os.Stdout, string(output))
+		time.Sleep(time.Second * time.Duration(config.Interval))
 	}
 }

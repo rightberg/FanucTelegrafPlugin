@@ -68,13 +68,18 @@ type AxisNodes struct {
 	AxesErr            *server.Node
 }
 
+type DeviceNodes struct {
+	name    *server.Node
+	address *server.Node
+	port    *server.Node
+	series  *server.Node
+}
+
 type CollectorNodes struct {
-	address    *server.Node
-	port       *server.Node
-	series     *server.Node
-	mode_nodes ModeNodes
-	prog_nodes ProgramNodes
-	axis_nodes AxisNodes
+	device_nodes DeviceNodes
+	mode_nodes   ModeNodes
+	prog_nodes   ProgramNodes
+	axis_nodes   AxisNodes
 }
 
 var col_nodes []CollectorNodes
@@ -246,9 +251,10 @@ func UpdateValue(node *server.Node, value any) {
 func UpdateDeviceNodes(col_data *CollectorsData) {
 	for index, value := range col_data.Collectors {
 		//device data
-		UpdateValue(col_nodes[index].address, string(value.Device.Address))
-		UpdateValue(col_nodes[index].port, int64(value.Device.Port))
-		UpdateValue(col_nodes[index].series, string(value.Device.Series))
+		UpdateValue(col_nodes[index].device_nodes.name, string(value.Device.Name))
+		UpdateValue(col_nodes[index].device_nodes.address, string(value.Device.Address))
+		UpdateValue(col_nodes[index].device_nodes.port, int64(value.Device.Port))
+		UpdateValue(col_nodes[index].device_nodes.series, string(value.Device.Series))
 		//mode data
 		UpdateValue(col_nodes[index].mode_nodes.Mode, string(value.Mode.Mode))
 		UpdateValue(col_nodes[index].mode_nodes.RunState, string(value.Mode.RunState))
@@ -284,16 +290,23 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 	for index := range collectors {
 		var str_index = strconv.Itoa(index)
 		var col_ns CollectorNodes
+
 		device_folder := GetFolderNode(node_ns, node_obj, "device_"+str_index)
 
+		//device data folder + variavles
+		device_data_folder := GetFolderNode(node_ns, device_folder, "device_data")
+
+		name_val := string(collectors[index].Device.Name)
+		col_ns.device_nodes.name = AddVariableNode(node_ns, device_data_folder, "name", name_val)
+
 		address_val := string(collectors[index].Device.Address)
-		col_ns.address = AddVariableNode(node_ns, device_folder, "address", address_val)
+		col_ns.device_nodes.address = AddVariableNode(node_ns, device_data_folder, "address", address_val)
 
 		port_val := int64(collectors[index].Device.Port)
-		col_ns.port = AddVariableNode(node_ns, device_folder, "port", port_val)
+		col_ns.device_nodes.port = AddVariableNode(node_ns, device_data_folder, "port", port_val)
 
 		series_val := string(collectors[index].Device.Series)
-		col_ns.series = AddVariableNode(node_ns, device_folder, "series", series_val)
+		col_ns.device_nodes.series = AddVariableNode(node_ns, device_data_folder, "series", series_val)
 
 		//mode data folder + variables
 		mode_folder := GetFolderNode(node_ns, device_folder, "mode_data")

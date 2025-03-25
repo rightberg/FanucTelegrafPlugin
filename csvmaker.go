@@ -41,9 +41,10 @@ func GetCSVNodeAtOpcNode(node *server.Node) CSVNode {
 
 func GetTagsAtOpcNodes(nodes CollectorNodes) []CSVNode {
 	csv_nodes := []CSVNode{}
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.address))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.port))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.series))
+	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.device_nodes.name))
+	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.device_nodes.address))
+	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.device_nodes.port))
+	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.device_nodes.series))
 
 	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.mode_nodes.Mode))
 	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.mode_nodes.RunState))

@@ -2,7 +2,10 @@
 	"interval": 5,
     "server":{
         "status": true,
-        "make csv": true
+        "make csv": true,
+        "security": false,
+        "login": "",
+        "password": ""
     },
     "devices": [
         {

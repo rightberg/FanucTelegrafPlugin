@@ -31,6 +31,30 @@ var (
 	gencert  = flag.Bool("gen-cert", false, "Generate a new certificate")
 )
 
+var available_policies []string = []string{
+	"None",
+	"Basic128Rsa15",
+	"Basic256",
+	"Basic256Sha256",
+	"Aes128_Sha256_RsaOaep",
+	"Aes128_Sha256_RsaOaep",
+}
+
+var available_sec_modes []string = []string{
+	"None",
+	"Sign",
+	"SignAndEncrypt",
+}
+
+var available_auth_modes []string = []string{
+	"Anonymous",
+	"Username",
+	"Certificate",
+}
+
+var loaded_policies []string
+var loaded_auth_modes []string
+
 var _server *server.Server
 var _node_ns *server.NodeNameSpace
 
@@ -67,6 +91,15 @@ type AxisNodes struct {
 	AxesErr            *server.Node
 }
 
+type SpindleNodes struct {
+	SpindleSpeed      *server.Node
+	SpindleSpeedParam *server.Node
+	SpindleMotorSpeed *server.Node
+	SpindleLoad       *server.Node
+	SpindleOverride   *server.Node
+	SpindleErr        *server.Node
+}
+
 type DeviceNodes struct {
 	name    *server.Node
 	address *server.Node
@@ -75,10 +108,11 @@ type DeviceNodes struct {
 }
 
 type CollectorNodes struct {
-	device_nodes DeviceNodes
-	mode_nodes   ModeNodes
-	prog_nodes   ProgramNodes
-	axis_nodes   AxisNodes
+	device_nodes  DeviceNodes
+	mode_nodes    ModeNodes
+	prog_nodes    ProgramNodes
+	axis_nodes    AxisNodes
+	spindle_nodes SpindleNodes
 }
 
 var col_nodes []CollectorNodes
@@ -106,6 +140,93 @@ func (l Logger) Error(msg string, args ...any) {
 	}
 }
 
+func StrContais(str string, slice []string) bool {
+	for _, value := range slice {
+		if value == str {
+			return true
+		}
+	}
+	return false
+}
+
+func GetSecurityMode(policy string, mode string) ua.MessageSecurityMode {
+	if policy == "None" {
+		return ua.MessageSecurityModeNone
+	}
+	switch mode {
+	case "Sign":
+		return ua.MessageSecurityModeSign
+	case "SignAndEncrypt":
+		return ua.MessageSecurityModeSignAndEncrypt
+	default:
+		return ua.MessageSecurityModeSign
+	}
+}
+
+func GetPoliciesOptions(policies map[string]string) []server.Option {
+	if policies == nil {
+		fmt.Println("Отсутсвуют политики безопасности")
+		return nil
+	}
+	if len(policies) == 0 {
+		fmt.Println("Список политик безопасности пуст")
+		return nil
+	}
+	options := []server.Option{}
+	for policy, mode := range policies {
+		policy_access := StrContais(policy, available_policies)
+		mode_access := StrContais(mode, available_sec_modes)
+		if policy_access && mode_access {
+			merge := policy + mode
+			if !StrContais(merge, loaded_policies) {
+				fmt.Println(merge)
+				options = append(options, server.EnableSecurity(policy, GetSecurityMode(policy, mode)))
+				loaded_policies = append(loaded_policies, merge)
+			}
+		}
+	}
+	if len(options) == 0 {
+		return nil
+	}
+	return options
+}
+
+func GetAuthMode(mode string) ua.UserTokenType {
+	switch mode {
+	case "Anonymous":
+		return ua.UserTokenTypeAnonymous
+	case "Username":
+		return ua.UserTokenTypeUserName
+	case "Certificate":
+		return ua.UserTokenTypeCertificate
+	default:
+		return ua.UserTokenTypeAnonymous
+	}
+}
+
+func GetAuthModeOptions(auth_modes []string) []server.Option {
+	if auth_modes == nil {
+		return nil
+	}
+	if len(auth_modes) == 0 {
+		return nil
+	}
+	options := []server.Option{}
+	for _, mode := range auth_modes {
+		auth_access := StrContais(mode, available_auth_modes)
+		if auth_access {
+			if !StrContais(mode, loaded_auth_modes) {
+				options = append(options, server.EnableAuthMode(GetAuthMode(mode)))
+				loaded_auth_modes = append(loaded_auth_modes, mode)
+			}
+		}
+	}
+	if len(options) == 0 {
+		return nil
+	}
+	return options
+}
+
 func inicialize() {
 	flag.BoolVar(&debug.Enable, "debug", false, "enable debug logging")
 	flag.Parse()
@@ -113,15 +234,19 @@ func inicialize() {
 
 	var opts []server.Option
 
-	// Set your security options.
-	opts = append(opts,
-		server.EnableSecurity("None", ua.MessageSecurityModeNone),
-	)
+	security_options := GetPoliciesOptions(config.Server.Security)
+	if security_options == nil {
+		opts = append(opts, server.EnableSecurity("None", ua.MessageSecurityModeNone))
+	} else {
+		opts = append(opts, security_options...)
+	}
 
-	// Set your user authentication options.
-	opts = append(opts,
-		server.EnableAuthMode(ua.UserTokenTypeAnonymous),
-	)
+	auth_options := GetAuthModeOptions(config.Server.AuthModes)
+	if auth_options == nil {
+		opts = append(opts, server.EnableAuthMode(ua.UserTokenTypeAnonymous))
+	} else {
+		opts = append(opts, auth_options...)
+	}
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -180,15 +305,11 @@ func inicialize() {
 	_server = server.New(opts...)
 	root_ns, _ := _server.Namespace(0)
 	root_obj_node := root_ns.Objects()
-
 	nodeNS := server.NewNodeNameSpace(_server, "Fanuc Devices")
-	nodeNS.Objects().SetDescription("Fanuc devices data", "Data from fanuc collector")
+	nodeNS.Objects().SetDescription("Fanuc devices data", "Fanuc devices data")
 	_node_ns = nodeNS
-	log.Printf("Node Namespace added at index %d", nodeNS.ID())
-
 	nns_obj := nodeNS.Objects()
 	root_obj_node.AddRef(nns_obj, id.HasComponent, true)
-
 	CreateCollectorNodes(collectors_data, nodeNS)
 }
 
@@ -279,7 +400,30 @@ func UpdateDeviceNodes(col_data *CollectorsData) {
 		UpdateValue(col_nodes[index].axis_nodes.JogSpeed, int64(value.Axes.JogSpeed))
 		UpdateValue(col_nodes[index].axis_nodes.CurrentLoad, float64(value.Axes.CurrentLoad))
 		UpdateValue(col_nodes[index].axis_nodes.CurrentLoadPercent, float64(value.Axes.CurrentLoadPercent))
+		var sv_loads []string
+		for k, v := range value.Axes.ServoLoads {
+			sv_loads = append(sv_loads, fmt.Sprintf("%s: %d", k, v))
+		}
+		sv_loads_str := strings.Join(sv_loads, ", ")
+		UpdateValue(col_nodes[index].axis_nodes.ServoLoads, string(sv_loads_str))
 		UpdateValue(col_nodes[index].axis_nodes.AxesErr, string(value.Axes.AxesErr))
+		//spindle data
+		UpdateValue(col_nodes[index].spindle_nodes.SpindleSpeed, int64(value.Spindle.SpindleSpeed))
+		UpdateValue(col_nodes[index].spindle_nodes.SpindleSpeedParam, int64(value.Spindle.SpindleSpeedParam))
+		var sp_motor_speeds []string
+		for k, v := range value.Spindle.SpindleMotorSpeed {
+			sp_motor_speeds = append(sp_motor_speeds, fmt.Sprintf("%s: %d", k, v))
+		}
+		motor_speeds_str := strings.Join(sp_motor_speeds, ", ")
+		UpdateValue(col_nodes[index].spindle_nodes.SpindleMotorSpeed, string(motor_speeds_str))
+		var sp_loads []string
+		for k, v := range value.Spindle.SpindleLoad {
+			sp_loads = append(sp_loads, fmt.Sprintf("%s: %d", k, v))
+		}
+		sp_loads_str := strings.Join(sp_loads, ", ")
+		UpdateValue(col_nodes[index].spindle_nodes.SpindleLoad, string(sp_loads_str))
+		UpdateValue(col_nodes[index].spindle_nodes.SpindleOverride, int64(value.Spindle.SpindleOverride))
+		UpdateValue(col_nodes[index].spindle_nodes.SpindleErr, string(value.Spindle.SpindleErr))
 	}
 }
 
@@ -379,15 +523,44 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 		current_load_percent_val := float64(collectors[index].Axes.CurrentLoadPercent)
 		col_ns.axis_nodes.CurrentLoadPercent = AddVariableNode(node_ns, axes_folder, "current_load_percent", current_load_percent_val)
 
-		var result []string
+		var sv_loads []string
 		for k, v := range collectors[index].Axes.ServoLoads {
-			result = append(result, fmt.Sprintf("%s: %d", k, v))
+			sv_loads = append(sv_loads, fmt.Sprintf("%s: %d", k, v))
 		}
-		finalString := strings.Join(result, ", ")
-		col_ns.axis_nodes.ServoLoads = AddVariableNode(node_ns, axes_folder, "servo_loads", finalString)
+		sv_loads_str := strings.Join(sv_loads, ", ")
+		col_ns.axis_nodes.ServoLoads = AddVariableNode(node_ns, axes_folder, "servo_loads", sv_loads_str)
 
 		axes_err_val := string(collectors[index].Axes.AxesErr)
 		col_ns.axis_nodes.AxesErr = AddVariableNode(node_ns, axes_folder, "axes_err", axes_err_val)
+
+		//spindle data folder + variables
+		spindle_folder := GetFolderNode(node_ns, device_folder, "spindle_data")
+
+		spindle_speed_val := int64(collectors[index].Spindle.SpindleSpeed)
+		col_ns.spindle_nodes.SpindleSpeed = AddVariableNode(node_ns, spindle_folder, "spindle_speed", spindle_speed_val)
+
+		spindle_param_speed_val := int64(collectors[index].Spindle.SpindleSpeedParam)
+		col_ns.spindle_nodes.SpindleSpeedParam = AddVariableNode(node_ns, spindle_folder, "spindle_param_speed", spindle_param_speed_val)
+
+		var sp_motor_speeds []string
+		for k, v := range collectors[index].Spindle.SpindleMotorSpeed {
+			sp_motor_speeds = append(sp_motor_speeds, fmt.Sprintf("%s: %d", k, v))
+		}
+		motor_speeds_str := strings.Join(sp_motor_speeds, ", ")
+		col_ns.spindle_nodes.SpindleMotorSpeed = AddVariableNode(node_ns, spindle_folder, "spindle_motor_speed", motor_speeds_str)
+
+		var sp_loads []string
+		for k, v := range collectors[index].Spindle.SpindleLoad {
+			sp_loads = append(sp_loads, fmt.Sprintf("%s: %d", k, v))
+		}
+		sp_loads_str := strings.Join(sp_loads, ", ")
+		col_ns.spindle_nodes.SpindleLoad = AddVariableNode(node_ns, spindle_folder, "spindle_load", sp_loads_str)
+
+		spindle_override_val := int64(collectors[index].Spindle.SpindleOverride)
+		col_ns.spindle_nodes.SpindleOverride = AddVariableNode(node_ns, spindle_folder, "spindle_override", spindle_override_val)
+
+		spindle_err_val := string(collectors[index].Spindle.SpindleErr)
+		col_ns.spindle_nodes.SpindleErr = AddVariableNode(node_ns, spindle_folder, "spindle_err", spindle_err_val)
 
 		col_nodes = append(col_nodes, col_ns)
 	}

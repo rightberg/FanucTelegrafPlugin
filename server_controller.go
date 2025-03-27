@@ -179,7 +179,6 @@ func GetPoliciesOptions(policies map[string]string) []server.Option {
 		if policy_access && mode_access {
 			merge := policy + mode
 			if !StrContais(merge, loaded_policies) {
-				fmt.Println(merge)
 				options = append(options, server.EnableSecurity(policy, GetSecurityMode(policy, mode)))
 				loaded_policies = append(loaded_policies, merge)
 			}

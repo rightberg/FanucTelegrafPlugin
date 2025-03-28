@@ -13,11 +13,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type ImportEndpoint struct {
+	Endpoint string `yaml:"endpoint"`
+	Port     int    `yaml:"server_port"`
+}
+
 type Server struct {
-	Status    bool              `json:"status" yaml:"status"`
+	Status    bool              `yaml:"status"`
 	Security  map[string]string `yaml:"security"`
 	AuthModes []string          `yaml:"auth_modes"`
-	MakeCSV   bool              `json:"make csv" yaml:"make_csv"`
+	Endpoints []ImportEndpoint  `yaml:"endpoints"`
+	MakeCert  bool              `yaml:"make cert"`
+	MakeCSV   bool              `yaml:"make_csv"`
 }
 
 type Device struct {

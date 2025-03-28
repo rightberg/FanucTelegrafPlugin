@@ -73,6 +73,13 @@ func GetTagsAtOpcNodes(nodes CollectorNodes) []CSVNode {
 	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.axis_nodes.ServoLoads))
 	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.axis_nodes.AxesErr))
 
+	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleSpeed))
+	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleSpeedParam))
+	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleMotorSpeed))
+	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleLoad))
+	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleOverride))
+	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleErr))
+
 	return csv_nodes
 }
 

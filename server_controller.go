@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/tls"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"log"
@@ -24,8 +25,6 @@ import (
 )
 
 var (
-	endpoint = flag.String("endpoint", "0.0.0.0", "OPC UA Endpoint URL")
-	port     = flag.Int("port", 4840, "OPC UA Endpoint port")
 	certfile = flag.String("cert", "cert.pem", "Path to certificate file")
 	keyfile  = flag.String("key", "key.pem", "Path to PEM Private Key file")
 	gencert  = flag.Bool("gen-cert", false, "Generate a new certificate")
@@ -51,9 +50,6 @@ var available_auth_modes []string = []string{
 	"Username",
 	"Certificate",
 }
-
-var loaded_policies []string
-var loaded_auth_modes []string
 
 var _server *server.Server
 var _node_ns *server.NodeNameSpace
@@ -164,15 +160,11 @@ func GetSecurityMode(policy string, mode string) ua.MessageSecurityMode {
 }
 
 func GetPoliciesOptions(policies map[string]string) []server.Option {
-	if policies == nil {
-		fmt.Println("Отсутсвуют политики безопасности")
-		return nil
-	}
 	if len(policies) == 0 {
-		fmt.Println("Список политик безопасности пуст")
 		return nil
 	}
 	options := []server.Option{}
+	var loaded_policies []string
 	for policy, mode := range policies {
 		policy_access := StrContais(policy, available_policies)
 		mode_access := StrContais(mode, available_sec_modes)
@@ -204,13 +196,11 @@ func GetAuthMode(mode string) ua.UserTokenType {
 }
 
 func GetAuthModeOptions(auth_modes []string) []server.Option {
-	if auth_modes == nil {
-		return nil
-	}
 	if len(auth_modes) == 0 {
 		return nil
 	}
 	options := []server.Option{}
+	var loaded_auth_modes []string
 	for _, mode := range auth_modes {
 		auth_access := StrContais(mode, available_auth_modes)
 		if auth_access {
@@ -226,90 +216,29 @@ func GetAuthModeOptions(auth_modes []string) []server.Option {
 	return options
 }
 
-func inicialize() {
-	flag.BoolVar(&debug.Enable, "debug", false, "enable debug logging")
-	flag.Parse()
-	log.SetFlags(0)
-
-	var opts []server.Option
-
-	security_options := GetPoliciesOptions(config.Server.Security)
-	if security_options == nil {
-		opts = append(opts, server.EnableSecurity("None", ua.MessageSecurityModeNone))
-	} else {
-		opts = append(opts, security_options...)
+func GetEndpointOptions(endpoints []ImportEndpoint) []server.Option {
+	if len(endpoints) == 0 {
+		return nil
 	}
-
-	auth_options := GetAuthModeOptions(config.Server.AuthModes)
-	if auth_options == nil {
-		opts = append(opts, server.EnableAuthMode(ua.UserTokenTypeAnonymous))
-	} else {
-		opts = append(opts, auth_options...)
-	}
-
-	hostname, err := os.Hostname()
-	if err != nil {
-		log.Fatalf("Error getting host name %v", err)
-	}
-
-	opts = append(opts,
-		server.EndPoint(*endpoint, *port),
-		server.EndPoint("localhost", *port),
-		server.EndPoint(hostname, *port),
-	)
-
-	logger := Logger(1)
-	opts = append(opts,
-		server.SetLogger(logger),
-	)
-
-	if *gencert {
-		endpoints := []string{
-			"localhost",
-			hostname,
-			*endpoint,
-		}
-
-		c, k, err := GenerateCert(endpoints, 4096, time.Minute*60*24*365*10)
-		if err != nil {
-			log.Fatalf("problem creating cert: %v", err)
-		}
-		err = os.WriteFile(*certfile, c, 0)
-		if err != nil {
-			log.Fatalf("problem writing cert: %v", err)
-		}
-		err = os.WriteFile(*keyfile, k, 0)
-		if err != nil {
-			log.Fatalf("problem writing key: %v", err)
-		}
-
-	}
-
-	var cert []byte
-	if *gencert || (*certfile != "" && *keyfile != "") {
-		log.Printf("Loading cert/key from %s/%s", *certfile, *keyfile)
-		c, err := tls.LoadX509KeyPair(*certfile, *keyfile)
-		if err != nil {
-			log.Printf("Failed to load certificate: %s", err)
-		} else {
-			pk, ok := c.PrivateKey.(*rsa.PrivateKey)
-			if !ok {
-				log.Fatalf("Invalid private key")
-			}
-			cert = c.Certificate[0]
-			opts = append(opts, server.PrivateKey(pk), server.Certificate(cert))
+	options := []server.Option{}
+	var loaded_endpoints []string
+	var endpoint string
+	var port int
+	var merge string
+	for _, imp_endpoint := range endpoints {
+		endpoint = imp_endpoint.Endpoint
+		port = imp_endpoint.Port
+		merge = fmt.Sprintf("%s%d", endpoint, port)
+		access := !StrContais(merge, loaded_endpoints)
+		if access {
+			options = append(options, server.EndPoint(endpoint, port))
+			loaded_endpoints = append(loaded_endpoints, merge)
 		}
 	}
-
-	_server = server.New(opts...)
-	root_ns, _ := _server.Namespace(0)
-	root_obj_node := root_ns.Objects()
-	nodeNS := server.NewNodeNameSpace(_server, "Fanuc Devices")
-	nodeNS.Objects().SetDescription("Fanuc devices data", "Fanuc devices data")
-	_node_ns = nodeNS
-	nns_obj := nodeNS.Objects()
-	root_obj_node.AddRef(nns_obj, id.HasComponent, true)
-	CreateCollectorNodes(collectors_data, nodeNS)
+	if len(options) == 0 {
+		return nil
+	}
+	return options
 }
 
 func AddVariableNode(node_ns *server.NodeNameSpace, node *server.Node, name string, value any) *server.Node {
@@ -364,7 +293,13 @@ func UpdateValue(node *server.Node, value any) {
 		EncodingMask:    ua.DataValueValue | ua.DataValueSourceTimestamp,
 	}
 	node.SetAttribute(ua.AttributeIDValue, &val)
-	_node_ns.ChangeNotification(node.ID())
+
+	ns_id := node.ID().Namespace()
+	namespace, err := _server.Namespace(int(ns_id))
+	if err == nil {
+		node_ns := namespace.(*server.NodeNameSpace)
+		node_ns.ChangeNotification(node.ID())
+	}
 }
 
 func UpdateDeviceNodes(col_data *CollectorsData) {
@@ -563,6 +498,120 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 
 		col_nodes = append(col_nodes, col_ns)
 	}
+}
+
+func inicialize() {
+	flag.BoolVar(&debug.Enable, "debug", false, "enable debug logging")
+	flag.Parse()
+	log.SetFlags(0)
+
+	var opts []server.Option
+
+	security_options := GetPoliciesOptions(config.Server.Security)
+	if security_options == nil {
+		opts = append(opts, server.EnableSecurity("None", ua.MessageSecurityModeNone))
+	} else {
+		opts = append(opts, security_options...)
+	}
+
+	auth_options := GetAuthModeOptions(config.Server.AuthModes)
+	if auth_options == nil {
+		opts = append(opts, server.EnableAuthMode(ua.UserTokenTypeAnonymous))
+	} else {
+		opts = append(opts, auth_options...)
+	}
+
+	endpoints := config.Server.Endpoints
+	endpoint_options := GetEndpointOptions(endpoints)
+	if endpoint_options == nil {
+		port := 4840
+		endpoints = []ImportEndpoint{{Endpoint: "0.0.0.0", Port: port}, {Endpoint: "localhost", Port: port}}
+		hostname, err := os.Hostname()
+		if err == nil {
+			endpoints = append(endpoints, ImportEndpoint{Endpoint: hostname, Port: port})
+		}
+	} else {
+		opts = append(opts, endpoint_options...)
+	}
+
+	logger := Logger(1)
+	opts = append(opts,
+		server.SetLogger(logger),
+	)
+
+	if *gencert {
+		var endpoints_str []string
+		if endpoints == nil {
+		}
+		for _, imp_endpoint := range endpoints {
+			endpoints_str = append(endpoints_str, imp_endpoint.Endpoint)
+		}
+
+		cert_created := false
+		if _, err := os.Stat(*certfile); err == nil {
+			log.Printf("Файл %s уже существует, пропускаем генерацию", *certfile)
+			cert_created = true
+		}
+		key_created := false
+		if _, err := os.Stat(*keyfile); err == nil {
+			log.Printf("Файл %s уже существует, пропускаем генерацию", *keyfile)
+			key_created = true
+		}
+		cert_der_created := false
+		if _, err := os.Stat("cert.der"); err == nil {
+			log.Printf("Файл %s уже существует, пропускаем генерацию", "cert.der")
+			cert_der_created = true
+		}
+
+		if !cert_created && !key_created && !cert_der_created {
+			c, k, err := GenerateCert(endpoints_str, 2048, time.Minute*60*24*365*10)
+			if err != nil {
+				log.Fatalf("problem creating cert: %v", err)
+			}
+			err = os.WriteFile(*certfile, c, 0)
+			if err != nil {
+				log.Fatalf("problem writing cert: %v", err)
+			}
+			err = os.WriteFile(*keyfile, k, 0)
+			if err != nil {
+				log.Fatalf("problem writing key: %v", err)
+			}
+			der, _ := pem.Decode(c)
+			if der == nil {
+				log.Fatalf("failed to parse PEM block for cert")
+			}
+			der_file := "cert.der"
+			err = os.WriteFile(der_file, der.Bytes, 0)
+			if err != nil {
+				log.Fatalf("problem writing DER cert: %v", err)
+			}
+		}
+	}
+
+	var cert []byte
+	if *gencert || (*certfile != "" && *keyfile != "") {
+		log.Printf("Loading cert/key from %s/%s", *certfile, *keyfile)
+		c, err := tls.LoadX509KeyPair(*certfile, *keyfile)
+		if err != nil {
+			log.Printf("Failed to load certificate: %s", err)
+		} else {
+			pk, ok := c.PrivateKey.(*rsa.PrivateKey)
+			if !ok {
+				log.Fatalf("Invalid private key")
+			}
+			cert = c.Certificate[0]
+			opts = append(opts, server.PrivateKey(pk), server.Certificate(cert))
+		}
+	}
+
+	_server = server.New(opts...)
+	root_ns, _ := _server.Namespace(0)
+	root_obj_node := root_ns.Objects()
+	_node_ns = server.NewNodeNameSpace(_server, "Fanuc Devices")
+	nns_obj := _node_ns.Objects()
+	nns_obj.SetDescription("Fanuc devices data", "Fanuc devices data")
+	root_obj_node.AddRef(nns_obj, id.HasComponent, true)
+	CreateCollectorNodes(collectors_data, _node_ns)
 }
 
 func start() {

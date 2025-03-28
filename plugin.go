@@ -23,7 +23,7 @@ type Server struct {
 	Security  map[string]string `yaml:"security"`
 	AuthModes []string          `yaml:"auth_modes"`
 	Endpoints []ImportEndpoint  `yaml:"endpoints"`
-	MakeCert  bool              `yaml:"make cert"`
+	MakeCert  bool              `yaml:"make_cert"`
 	MakeCSV   bool              `yaml:"make_csv"`
 }
 

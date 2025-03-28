@@ -27,7 +27,7 @@ import (
 var (
 	certfile = flag.String("cert", "cert.pem", "Path to certificate file")
 	keyfile  = flag.String("key", "key.pem", "Path to PEM Private Key file")
-	gencert  = flag.Bool("gen-cert", false, "Generate a new certificate")
+	//gencert  = flag.Bool("gen-cert", false, "Generate a new certificate")
 )
 
 var available_policies []string = []string{
@@ -539,7 +539,9 @@ func inicialize() {
 		server.SetLogger(logger),
 	)
 
-	if *gencert {
+	make_cert := config.Server.MakeCert
+
+	if make_cert {
 		var endpoints_str []string
 		if endpoints == nil {
 		}
@@ -589,7 +591,7 @@ func inicialize() {
 	}
 
 	var cert []byte
-	if *gencert || (*certfile != "" && *keyfile != "") {
+	if make_cert || (*certfile != "" && *keyfile != "") {
 		log.Printf("Loading cert/key from %s/%s", *certfile, *keyfile)
 		c, err := tls.LoadX509KeyPair(*certfile, *keyfile)
 		if err != nil {

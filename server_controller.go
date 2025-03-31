@@ -179,7 +179,6 @@ func UpdateDeviceNodes(collectors []CollectorData) {
 				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_motor_speed", string(MapToStr(collector.Spindle.SpindleMotorSpeed)))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_load", string(MapToStr(collector.Spindle.SpindleLoad)))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_err", string(collector.Spindle.SpindleErr))
-
 				// Alarm data
 				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/emergency", string(collector.Alarm.Emergency))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/alarm_status", string(collector.Alarm.AlarmStatus))
@@ -295,6 +294,7 @@ func inicialize() {
 		}
 		for _, imp_endpoint := range endpoints {
 			endpoints_str = append(endpoints_str, imp_endpoint.Endpoint)
+			endpoints_str = append(endpoints_str, "urn:LAPTOP-CV2C04U9:GOPCUA")
 		}
 
 		cert_created := false

@@ -39,47 +39,11 @@ func GetCSVNodeAtOpcNode(node *server.Node) CSVNode {
 		Description: "Fanuc"}
 }
 
-func GetTagsAtOpcNodes(nodes CollectorNodes) []CSVNode {
+func GetTagsAtOpcNodes(name string) []CSVNode {
 	csv_nodes := []CSVNode{}
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.device_nodes.name))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.device_nodes.address))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.device_nodes.port))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.device_nodes.series))
-
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.mode_nodes.Mode))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.mode_nodes.RunState))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.mode_nodes.Status))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.mode_nodes.Shutdowns))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.mode_nodes.HightSpeed))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.mode_nodes.AxisMotion))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.mode_nodes.Mstb))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.mode_nodes.LoadExcess))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.mode_nodes.ModeErr))
-
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.prog_nodes.Frame))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.prog_nodes.MainProgNumber))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.prog_nodes.SubProgNumber))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.prog_nodes.PartsCount))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.prog_nodes.ToolNumber))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.prog_nodes.FrameNumber))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.prog_nodes.PrgErr))
-
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.axis_nodes.FeedRate))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.axis_nodes.FeedOverride))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.axis_nodes.JogOverride))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.axis_nodes.JogSpeed))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.axis_nodes.CurrentLoad))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.axis_nodes.CurrentLoadPercent))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.axis_nodes.ServoLoads))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.axis_nodes.AxesErr))
-
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleSpeed))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleSpeedParam))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleMotorSpeed))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleLoad))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleOverride))
-	csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(nodes.spindle_nodes.SpindleErr))
-
+	for _, node := range GetDeviceNodes(name) {
+		csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(node))
+	}
 	return csv_nodes
 }
 

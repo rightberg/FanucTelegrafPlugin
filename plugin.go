@@ -42,57 +42,64 @@ type Config struct {
 }
 
 type ModeData struct {
-	Mode       string `json:"mode" yaml:"mode"`
-	RunState   string `json:"run_state" yaml:"run_state"`
-	Status     string `json:"status" yaml:"status"`
-	Shutdowns  string `json:"shutdowns" yaml:"shutdowns"`
-	HightSpeed string `json:"hight_speed" yaml:"hight_speed"`
-	AxisMotion string `json:"axis_motion" yaml:"axis_motion"`
+	Mode       string `json:"mode"`
+	RunState   string `json:"run_state"`
+	Status     string `json:"status"`
+	Shutdowns  string `json:"shutdowns"`
+	HightSpeed string `json:"hight_speed"`
+	AxisMotion string `json:"axis_motion"`
 	Mstb       string `json:"mstb" yaml:"mstb"`
-	LoadExcess string `json:"load_excess" yaml:"load_excess"`
-	ModeErr    string `json:"mode_err" yaml:"mode_err"`
+	LoadExcess string `json:"load_excess"`
+	ModeErr    string `json:"mode_err"`
 }
 
 type ProgramData struct {
 	Frame          string `json:"frame" yaml:"frame"`
-	MainProgNumber int    `json:"main_prog_number" yaml:"main_prog_number"`
-	SubProgNumber  int    `json:"sub_prog_number" yaml:"sub_prog_number"`
-	PartsCount     int    `json:"parts_count" yaml:"parts_count"`
-	ToolNumber     int    `json:"tool_number" yaml:"tool_number"`
-	FrameNumber    int    `json:"frame_number" yaml:"frame_number"`
-	PrgErr         string `json:"prg_err" yaml:"prg_err"`
+	MainProgNumber int    `json:"main_prog_number"`
+	SubProgNumber  int    `json:"sub_prog_number"`
+	PartsCount     int    `json:"parts_count"`
+	ToolNumber     int    `json:"tool_number"`
+	FrameNumber    int    `json:"frame_number"`
+	PrgErr         string `json:"prg_err"`
 }
 
 type AxesData struct {
-	FeedRate           int            `json:"feedrate" yaml:"feed_rate"`
-	FeedOverride       int            `json:"feed_override" yaml:"feed_override"`
-	JogOverride        float64        `json:"jog_override" yaml:"jog_override"`
-	JogSpeed           int            `json:"jog_speed" yaml:"jog_speed"`
-	CurrentLoad        float64        `json:"current_load" yaml:"current_load"`
-	CurrentLoadPercent float64        `json:"current_load_percent" yaml:"current_load_percent"`
-	ServoLoads         map[string]int `json:"servo_loads" yaml:"servo_loads"`
-	AxesErr            string         `json:"axes_err" yaml:"axes_err"`
+	FeedRate           int            `json:"feedrate"`
+	FeedOverride       int            `json:"feed_override"`
+	JogOverride        float64        `json:"jog_override"`
+	JogSpeed           int            `json:"jog_speed"`
+	CurrentLoad        float64        `json:"current_load"`
+	CurrentLoadPercent float64        `json:"current_load_percent"`
+	ServoLoads         map[string]int `json:"servo_loads"`
+	AxesErr            string         `json:"axes_err"`
 }
 
 type SpindleData struct {
-	SpindleSpeed      int            `json:"spindle_speed" yaml:"spindle_speed"`
-	SpindleSpeedParam int            `json:"spindle_param_speed" yaml:"spindle_param_speed"`
-	SpindleMotorSpeed map[string]int `json:"spindle_motor_speed" yaml:"spindle_motor_speed"`
-	SpindleLoad       map[string]int `json:"spindle_load" yaml:"spindle_load"`
-	SpindleOverride   int            `json:"spindle_override" yaml:"spindle_override"`
-	SpindleErr        string         `json:"spindle_err" yaml:"spindle_err"`
+	SpindleSpeed      int            `json:"spindle_speed"`
+	SpindleSpeedParam int            `json:"spindle_param_speed"`
+	SpindleMotorSpeed map[string]int `json:"spindle_motor_speed"`
+	SpindleLoad       map[string]int `json:"spindle_load"`
+	SpindleOverride   int            `json:"spindle_override"`
+	SpindleErr        string         `json:"spindle_err"`
+}
+
+type AlarmData struct {
+	Emergency   string `json:"emergency"`
+	AlarmStatus string `json:"alarm_status"`
+	AlarmErr    string `json:"alarm_err"`
 }
 
 type CollectorData struct {
-	Device  Device      `json:"device" yaml:"device"`
-	Mode    ModeData    `json:"mode_data" yaml:"mode_data"`
-	Program ProgramData `json:"program_data" yaml:"program_data"`
-	Axes    AxesData    `json:"axes_data" yaml:"axes_data"`
-	Spindle SpindleData `json:"spindle_data" yaml:"spindle_data"`
+	Device  Device      `json:"device"`
+	Mode    ModeData    `json:"mode_data"`
+	Program ProgramData `json:"program_data"`
+	Axes    AxesData    `json:"axes_data"`
+	Spindle SpindleData `json:"spindle_data"`
+	Alarm   AlarmData   `json:"alarm_data"`
 }
 
 type CollectorsData struct {
-	Collectors []CollectorData `json:"collectors" yaml:"collectors"`
+	Collectors []CollectorData `json:"collectors"`
 }
 
 var collectors_data CollectorsData
@@ -132,8 +139,8 @@ func main() {
 		}
 		inicialize()
 		if config.Server.MakeCSV {
-			for index, collector := range col_nodes {
-				MakeCSV(GetTagsAtOpcNodes(collector), config.Devices[index].Name, plugin_dir)
+			for index := range device_nodes {
+				MakeCSV(GetTagsAtOpcNodes(config.Devices[index].Name), config.Devices[index].Name, plugin_dir)
 			}
 		}
 		go start()
@@ -166,7 +173,7 @@ func main() {
 		}
 
 		if config.Server.Status {
-			UpdateDeviceNodes(&collectors_data)
+			UpdateDeviceNodes(collectors_data.Collectors)
 		}
 
 		fmt.Fprintln(os.Stdout, string(output))

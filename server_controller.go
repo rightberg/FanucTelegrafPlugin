@@ -1,7 +1,3 @@
-// Copyright 2018-2020 opcua authors. All rights reserved.
-// Use of this source code is governed by a MIT-style license that can be
-// found in the LICENSE file.
-
 package main
 
 import (
@@ -20,17 +16,15 @@ import (
 	"github.com/gopcua/opcua/debug"
 	"github.com/gopcua/opcua/id"
 	"github.com/gopcua/opcua/server"
-	"github.com/gopcua/opcua/server/attrs"
 	"github.com/gopcua/opcua/ua"
 )
 
 var (
 	certfile = flag.String("cert", "cert.pem", "Path to certificate file")
 	keyfile  = flag.String("key", "key.pem", "Path to PEM Private Key file")
-	//gencert  = flag.Bool("gen-cert", false, "Generate a new certificate")
 )
 
-var available_policies []string = []string{
+var available_policies = []string{
 	"None",
 	"Basic128Rsa15",
 	"Basic256",
@@ -39,79 +33,21 @@ var available_policies []string = []string{
 	"Aes128_Sha256_RsaOaep",
 }
 
-var available_sec_modes []string = []string{
+var available_sec_modes = []string{
 	"None",
 	"Sign",
 	"SignAndEncrypt",
 }
 
-var available_auth_modes []string = []string{
+var available_auth_modes = []string{
 	"Anonymous",
 	"Username",
 	"Certificate",
 }
 
 var _server *server.Server
-var _node_ns *server.NodeNameSpace
-
-type ModeNodes struct {
-	Mode       *server.Node
-	RunState   *server.Node
-	Status     *server.Node
-	Shutdowns  *server.Node
-	HightSpeed *server.Node
-	AxisMotion *server.Node
-	Mstb       *server.Node
-	LoadExcess *server.Node
-	ModeErr    *server.Node
-}
-
-type ProgramNodes struct {
-	Frame          *server.Node
-	MainProgNumber *server.Node
-	SubProgNumber  *server.Node
-	PartsCount     *server.Node
-	ToolNumber     *server.Node
-	FrameNumber    *server.Node
-	PrgErr         *server.Node
-}
-
-type AxisNodes struct {
-	FeedRate           *server.Node
-	FeedOverride       *server.Node
-	JogOverride        *server.Node
-	JogSpeed           *server.Node
-	CurrentLoad        *server.Node
-	CurrentLoadPercent *server.Node
-	ServoLoads         *server.Node
-	AxesErr            *server.Node
-}
-
-type SpindleNodes struct {
-	SpindleSpeed      *server.Node
-	SpindleSpeedParam *server.Node
-	SpindleMotorSpeed *server.Node
-	SpindleLoad       *server.Node
-	SpindleOverride   *server.Node
-	SpindleErr        *server.Node
-}
-
-type DeviceNodes struct {
-	name    *server.Node
-	address *server.Node
-	port    *server.Node
-	series  *server.Node
-}
-
-type CollectorNodes struct {
-	device_nodes  DeviceNodes
-	mode_nodes    ModeNodes
-	prog_nodes    ProgramNodes
-	axis_nodes    AxisNodes
-	spindle_nodes SpindleNodes
-}
-
-var col_nodes []CollectorNodes
+var fanuc_ns = int(1)
+var device_nodes []*server.Node
 
 type Logger int
 
@@ -136,367 +72,180 @@ func (l Logger) Error(msg string, args ...any) {
 	}
 }
 
-func StrContais(str string, slice []string) bool {
-	for _, value := range slice {
-		if value == str {
-			return true
-		}
+func MapToStr(map_data map[string]int) string {
+	var merge []string
+	for k, v := range map_data {
+		merge = append(merge, fmt.Sprintf("%s: %d", k, v))
 	}
-	return false
+	res := strings.Join(merge, ", ")
+	return res
 }
 
-func GetSecurityMode(policy string, mode string) ua.MessageSecurityMode {
-	if policy == "None" {
-		return ua.MessageSecurityModeNone
+func GetDeviceNodes(device_name string) []*server.Node {
+	var result []*server.Node
+	addresses := []string{
+		"/device_data/name",
+		"/device_data/address",
+		"/device_data/port",
+		"/device_data/series",
+		"/mode_data/mode",
+		"/mode_data/run_state",
+		"/mode_data/status",
+		"/mode_data/shutdowns",
+		"/mode_data/hight_speed",
+		"/mode_data/axis_motion",
+		"/mode_data/load_excess",
+		"/mode_data/mode_err",
+		"/program_data/frame",
+		"/program_data/main_prog_number",
+		"/program_data/sub_prog_number",
+		"/program_data/parts_count",
+		"/program_data/tool_number",
+		"/program_data/frame_number",
+		"/program_data/prg_err",
+		"/axes_data/feedrate",
+		"/axes_data/feed_override",
+		"/axes_data/jog_override",
+		"/axes_data/jog_speed",
+		"/axes_data/current_load",
+		"/axes_data/current_load_percent",
+		"/axes_data/servo_loads",
+		"/axes_data/axes_err",
+		"/spindle_data/spindle_speed",
+		"/spindle_data/spindle_param_speed",
+		"/spindle_data/spindle_override",
+		"/spindle_data/spindle_motor_speed",
+		"/spindle_data/spindle_load",
+		"/spindle_data/spindle_err",
+		"/alarm_data/emergency",
+		"/alarm_data/alarm_status",
+		"/alarm_data/alarm_err",
 	}
-	switch mode {
-	case "Sign":
-		return ua.MessageSecurityModeSign
-	case "SignAndEncrypt":
-		return ua.MessageSecurityModeSignAndEncrypt
-	default:
-		return ua.MessageSecurityModeSign
-	}
-}
-
-func GetPoliciesOptions(policies map[string]string) []server.Option {
-	if len(policies) == 0 {
-		return nil
-	}
-	options := []server.Option{}
-	var loaded_policies []string
-	for policy, mode := range policies {
-		policy_access := StrContais(policy, available_policies)
-		mode_access := StrContais(mode, available_sec_modes)
-		if policy_access && mode_access {
-			merge := policy + mode
-			if !StrContais(merge, loaded_policies) {
-				options = append(options, server.EnableSecurity(policy, GetSecurityMode(policy, mode)))
-				loaded_policies = append(loaded_policies, merge)
+	node_ns := GetNodeNamespace(_server, fanuc_ns)
+	if node_ns != nil {
+		for _, address := range addresses {
+			device_address := fmt.Sprintf("ns=%d;s=%s", fanuc_ns, device_name)
+			node := GetNodeAtAddress(node_ns, device_address+address)
+			if node != nil {
+				result = append(result, node)
 			}
 		}
 	}
-	if len(options) == 0 {
-		return nil
-	}
-	return options
+	return result
 }
 
-func GetAuthMode(mode string) ua.UserTokenType {
-	switch mode {
-	case "Anonymous":
-		return ua.UserTokenTypeAnonymous
-	case "Username":
-		return ua.UserTokenTypeUserName
-	case "Certificate":
-		return ua.UserTokenTypeCertificate
-	default:
-		return ua.UserTokenTypeAnonymous
-	}
-}
+func UpdateDeviceNodes(collectors []CollectorData) {
+	node_ns := GetNodeNamespace(_server, fanuc_ns)
+	if node_ns != nil {
+		var device_address string
+		if len(device_nodes) == len(collectors) {
+			for index, collector := range collectors {
+				device_address = device_nodes[index].ID().String()
+				// Device data
+				UpdateNodeValueAtAddress(node_ns, device_address+"/device_data/name", string(collector.Device.Name))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/device_data/address", string(collector.Device.Address))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/device_data/port", int64(collector.Device.Port))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/device_data/series", string(collector.Device.Series))
+				// Mode data
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/mode", string(collector.Mode.Mode))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/run_state", string(collector.Mode.RunState))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/status", string(collector.Mode.Status))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/shutdowns", string(collector.Mode.Shutdowns))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/hight_speed", string(collector.Mode.HightSpeed))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/axis_motion", string(collector.Mode.AxisMotion))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/load_excess", string(collector.Mode.LoadExcess))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/mode_err", string(collector.Mode.ModeErr))
+				// Program data
+				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/frame", string(collector.Program.Frame))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/main_prog_number", int64(collector.Program.MainProgNumber))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/sub_prog_number", int64(collector.Program.SubProgNumber))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/parts_count", int64(collector.Program.PartsCount))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/tool_number", int64(collector.Program.ToolNumber))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/frame_number", int64(collector.Program.FrameNumber))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/prg_err", string(collector.Program.PrgErr))
+				// Axes data
+				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/feedrate", int64(collector.Axes.FeedRate))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/feed_override", int64(collector.Axes.FeedOverride))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/jog_override", float64(collector.Axes.JogOverride))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/jog_speed", int64(collector.Axes.JogSpeed))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/current_load", float64(collector.Axes.CurrentLoad))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/current_load_percent", float64(collector.Axes.CurrentLoadPercent))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/servo_loads", string(MapToStr(collector.Axes.ServoLoads)))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/axes_err", string(collector.Axes.AxesErr))
+				// Spindle data
+				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_speed", int64(collector.Spindle.SpindleSpeed))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_param_speed", int64(collector.Spindle.SpindleSpeedParam))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_override", int64(collector.Spindle.SpindleOverride))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_motor_speed", string(MapToStr(collector.Spindle.SpindleMotorSpeed)))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_load", string(MapToStr(collector.Spindle.SpindleLoad)))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_err", string(collector.Spindle.SpindleErr))
 
-func GetAuthModeOptions(auth_modes []string) []server.Option {
-	if len(auth_modes) == 0 {
-		return nil
-	}
-	options := []server.Option{}
-	var loaded_auth_modes []string
-	for _, mode := range auth_modes {
-		auth_access := StrContais(mode, available_auth_modes)
-		if auth_access {
-			if !StrContais(mode, loaded_auth_modes) {
-				options = append(options, server.EnableAuthMode(GetAuthMode(mode)))
-				loaded_auth_modes = append(loaded_auth_modes, mode)
+				// Alarm data
+				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/emergency", string(collector.Alarm.Emergency))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/alarm_status", string(collector.Alarm.AlarmStatus))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/alarm_err", string(collector.Alarm.AlarmErr))
 			}
 		}
-	}
-	if len(options) == 0 {
-		return nil
-	}
-	return options
-}
-
-func GetEndpointOptions(endpoints []ImportEndpoint) []server.Option {
-	if len(endpoints) == 0 {
-		return nil
-	}
-	options := []server.Option{}
-	var loaded_endpoints []string
-	var endpoint string
-	var port int
-	var merge string
-	for _, imp_endpoint := range endpoints {
-		endpoint = imp_endpoint.Endpoint
-		port = imp_endpoint.Port
-		merge = fmt.Sprintf("%s%d", endpoint, port)
-		access := !StrContais(merge, loaded_endpoints)
-		if access {
-			options = append(options, server.EndPoint(endpoint, port))
-			loaded_endpoints = append(loaded_endpoints, merge)
-		}
-	}
-	if len(options) == 0 {
-		return nil
-	}
-	return options
-}
-
-func AddVariableNode(node_ns *server.NodeNameSpace, node *server.Node, name string, value any) *server.Node {
-	parent_id := node.ID().StringID()
-	if parent_id != "" {
-		parent_id += "/"
-	}
-	node_id := ua.NewStringExpandedNodeID(node_ns.ID(), parent_id+name)
-	attributes := map[ua.AttributeID]*ua.DataValue{
-		ua.AttributeIDNodeID:          server.DataValueFromValue(node_id),
-		ua.AttributeIDNodeClass:       server.DataValueFromValue(uint32(ua.NodeClassVariable)),
-		ua.AttributeIDBrowseName:      server.DataValueFromValue(attrs.BrowseName(name)),
-		ua.AttributeIDDisplayName:     server.DataValueFromValue(attrs.DisplayName(name, name)),
-		ua.AttributeIDDescription:     server.DataValueFromValue(&ua.LocalizedText{Locale: name, Text: name}),
-		ua.AttributeIDValue:           server.DataValueFromValue(value),
-		ua.AttributeIDDataType:        server.DataValueFromValue(node_id),
-		ua.AttributeIDWriteMask:       server.DataValueFromValue(uint32(0)),
-		ua.AttributeIDUserWriteMask:   server.DataValueFromValue(uint32(0)),
-		ua.AttributeIDAccessLevel:     server.DataValueFromValue(uint8(0x05)),
-		ua.AttributeIDUserAccessLevel: server.DataValueFromValue(uint8(0x05)),
-		ua.AttributeIDHistorizing:     server.DataValueFromValue(bool(false)),
-		ua.AttributeIDValueRank:       server.DataValueFromValue(int32(-1)),
-	}
-	variable := server.NewNode(ua.NewNodeIDFromExpandedNodeID(node_id), attributes, nil, nil)
-	variable.SetAttribute(ua.AttributeIDValue, server.DataValueFromValue(value))
-	node_ns.AddNode(variable)
-	node.AddRef(variable, id.HasComponent, true)
-	return variable
-}
-
-func GetFolderNode(node_ns *server.NodeNameSpace, node *server.Node, name string) *server.Node {
-	parent_id := node.ID().StringID()
-	if parent_id != "" {
-		parent_id += "/"
-	}
-	folder_id := ua.NewStringNodeID(node_ns.ID(), parent_id+name)
-	attributes := map[ua.AttributeID]*ua.DataValue{
-		ua.AttributeIDNodeClass:   server.DataValueFromValue(uint32(ua.NodeClassObject)),
-		ua.AttributeIDBrowseName:  server.DataValueFromValue(attrs.BrowseName(name)),
-		ua.AttributeIDDescription: server.DataValueFromValue(&ua.LocalizedText{Locale: name, Text: name}),
-	}
-	folder := server.NewNode(folder_id, attributes, nil, nil)
-	node_ns.AddNode(folder)
-	node.AddRef(folder, id.HasComponent, true)
-	return folder
-}
-
-func UpdateValue(node *server.Node, value any) {
-	val := ua.DataValue{
-		Value:           ua.MustVariant(value),
-		SourceTimestamp: time.Now(),
-		EncodingMask:    ua.DataValueValue | ua.DataValueSourceTimestamp,
-	}
-	node.SetAttribute(ua.AttributeIDValue, &val)
-
-	ns_id := node.ID().Namespace()
-	namespace, err := _server.Namespace(int(ns_id))
-	if err == nil {
-		node_ns := namespace.(*server.NodeNameSpace)
-		node_ns.ChangeNotification(node.ID())
-	}
-}
-
-func UpdateDeviceNodes(col_data *CollectorsData) {
-	for index, value := range col_data.Collectors {
-		//device data
-		UpdateValue(col_nodes[index].device_nodes.name, string(value.Device.Name))
-		UpdateValue(col_nodes[index].device_nodes.address, string(value.Device.Address))
-		UpdateValue(col_nodes[index].device_nodes.port, int64(value.Device.Port))
-		UpdateValue(col_nodes[index].device_nodes.series, string(value.Device.Series))
-		//mode data
-		UpdateValue(col_nodes[index].mode_nodes.Mode, string(value.Mode.Mode))
-		UpdateValue(col_nodes[index].mode_nodes.RunState, string(value.Mode.RunState))
-		UpdateValue(col_nodes[index].mode_nodes.Status, string(value.Mode.Status))
-		UpdateValue(col_nodes[index].mode_nodes.Shutdowns, string(value.Mode.Shutdowns))
-		UpdateValue(col_nodes[index].mode_nodes.HightSpeed, string(value.Mode.HightSpeed))
-		UpdateValue(col_nodes[index].mode_nodes.AxisMotion, string(value.Mode.AxisMotion))
-		UpdateValue(col_nodes[index].mode_nodes.Mstb, string(value.Mode.LoadExcess))
-		UpdateValue(col_nodes[index].mode_nodes.LoadExcess, string(value.Mode.LoadExcess))
-		UpdateValue(col_nodes[index].mode_nodes.ModeErr, string(value.Mode.ModeErr))
-		//program data
-		UpdateValue(col_nodes[index].prog_nodes.Frame, string(value.Program.Frame))
-		UpdateValue(col_nodes[index].prog_nodes.MainProgNumber, int64(value.Program.MainProgNumber))
-		UpdateValue(col_nodes[index].prog_nodes.SubProgNumber, int64(value.Program.SubProgNumber))
-		UpdateValue(col_nodes[index].prog_nodes.PartsCount, int64(value.Program.PartsCount))
-		UpdateValue(col_nodes[index].prog_nodes.ToolNumber, int64(value.Program.ToolNumber))
-		UpdateValue(col_nodes[index].prog_nodes.FrameNumber, int64(value.Program.FrameNumber))
-		UpdateValue(col_nodes[index].prog_nodes.PrgErr, string(value.Program.PrgErr))
-		//axis data
-		UpdateValue(col_nodes[index].axis_nodes.FeedRate, int64(value.Axes.FeedRate))
-		UpdateValue(col_nodes[index].axis_nodes.FeedOverride, int64(value.Axes.FeedOverride))
-		UpdateValue(col_nodes[index].axis_nodes.JogOverride, float64(value.Axes.JogOverride))
-		UpdateValue(col_nodes[index].axis_nodes.JogSpeed, int64(value.Axes.JogSpeed))
-		UpdateValue(col_nodes[index].axis_nodes.CurrentLoad, float64(value.Axes.CurrentLoad))
-		UpdateValue(col_nodes[index].axis_nodes.CurrentLoadPercent, float64(value.Axes.CurrentLoadPercent))
-		var sv_loads []string
-		for k, v := range value.Axes.ServoLoads {
-			sv_loads = append(sv_loads, fmt.Sprintf("%s: %d", k, v))
-		}
-		sv_loads_str := strings.Join(sv_loads, ", ")
-		UpdateValue(col_nodes[index].axis_nodes.ServoLoads, string(sv_loads_str))
-		UpdateValue(col_nodes[index].axis_nodes.AxesErr, string(value.Axes.AxesErr))
-		//spindle data
-		UpdateValue(col_nodes[index].spindle_nodes.SpindleSpeed, int64(value.Spindle.SpindleSpeed))
-		UpdateValue(col_nodes[index].spindle_nodes.SpindleSpeedParam, int64(value.Spindle.SpindleSpeedParam))
-		var sp_motor_speeds []string
-		for k, v := range value.Spindle.SpindleMotorSpeed {
-			sp_motor_speeds = append(sp_motor_speeds, fmt.Sprintf("%s: %d", k, v))
-		}
-		motor_speeds_str := strings.Join(sp_motor_speeds, ", ")
-		UpdateValue(col_nodes[index].spindle_nodes.SpindleMotorSpeed, string(motor_speeds_str))
-		var sp_loads []string
-		for k, v := range value.Spindle.SpindleLoad {
-			sp_loads = append(sp_loads, fmt.Sprintf("%s: %d", k, v))
-		}
-		sp_loads_str := strings.Join(sp_loads, ", ")
-		UpdateValue(col_nodes[index].spindle_nodes.SpindleLoad, string(sp_loads_str))
-		UpdateValue(col_nodes[index].spindle_nodes.SpindleOverride, int64(value.Spindle.SpindleOverride))
-		UpdateValue(col_nodes[index].spindle_nodes.SpindleErr, string(value.Spindle.SpindleErr))
 	}
 }
 
 func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 	node_obj := node_ns.Objects()
 	collectors := data.Collectors
+	device_nodes = []*server.Node{}
 	for index := range collectors {
-		var col_ns CollectorNodes
-
 		device_folder := GetFolderNode(node_ns, node_obj, data.Collectors[index].Device.Name)
+		//device folder + variables
 		device_data_folder := GetFolderNode(node_ns, device_folder, "device_data")
-
-		name_val := string(collectors[index].Device.Name)
-		col_ns.device_nodes.name = AddVariableNode(node_ns, device_data_folder, "name", name_val)
-
-		address_val := string(collectors[index].Device.Address)
-		col_ns.device_nodes.address = AddVariableNode(node_ns, device_data_folder, "address", address_val)
-
-		port_val := int64(collectors[index].Device.Port)
-		col_ns.device_nodes.port = AddVariableNode(node_ns, device_data_folder, "port", port_val)
-
-		series_val := string(collectors[index].Device.Series)
-		col_ns.device_nodes.series = AddVariableNode(node_ns, device_data_folder, "series", series_val)
-
+		AddVariableNode(node_ns, device_data_folder, "name", string(""))
+		AddVariableNode(node_ns, device_data_folder, "address", string(""))
+		AddVariableNode(node_ns, device_data_folder, "port", int64(0))
+		AddVariableNode(node_ns, device_data_folder, "series", string(""))
 		//mode data folder + variables
 		mode_folder := GetFolderNode(node_ns, device_folder, "mode_data")
-
-		mode_val := collectors[index].Mode.Mode
-		col_ns.mode_nodes.Mode = AddVariableNode(node_ns, mode_folder, "mode", mode_val)
-
-		run_state_val := collectors[index].Mode.RunState
-		col_ns.mode_nodes.RunState = AddVariableNode(node_ns, mode_folder, "run_state", run_state_val)
-
-		status_val := collectors[index].Mode.Status
-		col_ns.mode_nodes.Status = AddVariableNode(node_ns, mode_folder, "status", status_val)
-
-		shutdowns_val := collectors[index].Mode.Shutdowns
-		col_ns.mode_nodes.Shutdowns = AddVariableNode(node_ns, mode_folder, "shutdowns", shutdowns_val)
-
-		hight_speed_val := collectors[index].Mode.HightSpeed
-		col_ns.mode_nodes.HightSpeed = AddVariableNode(node_ns, mode_folder, "hight_speed", hight_speed_val)
-
-		axis_motion_val := collectors[index].Mode.AxisMotion
-		col_ns.mode_nodes.AxisMotion = AddVariableNode(node_ns, mode_folder, "axis_motion", axis_motion_val)
-
-		mstb_val := collectors[index].Mode.Mstb
-		col_ns.mode_nodes.Mstb = AddVariableNode(node_ns, mode_folder, "mstb", mstb_val)
-
-		load_excess_val := collectors[index].Mode.LoadExcess
-		col_ns.mode_nodes.LoadExcess = AddVariableNode(node_ns, mode_folder, "load_excess", load_excess_val)
-
-		mode_err_val := string(collectors[index].Mode.ModeErr)
-		col_ns.mode_nodes.ModeErr = AddVariableNode(node_ns, mode_folder, "mode_err", mode_err_val)
-
+		AddVariableNode(node_ns, mode_folder, "mode", string(""))
+		AddVariableNode(node_ns, mode_folder, "run_state", string(""))
+		AddVariableNode(node_ns, mode_folder, "status", string(""))
+		AddVariableNode(node_ns, mode_folder, "shutdowns", string(""))
+		AddVariableNode(node_ns, mode_folder, "hight_speed", string(""))
+		AddVariableNode(node_ns, mode_folder, "axis_motion", string(""))
+		AddVariableNode(node_ns, mode_folder, "mstb", string(""))
+		AddVariableNode(node_ns, mode_folder, "load_excess", string(""))
+		AddVariableNode(node_ns, mode_folder, "mode_err", string(""))
 		//program data folder + variables
 		program_folder := GetFolderNode(node_ns, device_folder, "program_data")
-
-		frame_val := string(collectors[index].Program.Frame)
-		col_ns.prog_nodes.Frame = AddVariableNode(node_ns, program_folder, "frame", frame_val)
-
-		main_prog_number_val := int64(collectors[index].Program.MainProgNumber)
-		col_ns.prog_nodes.MainProgNumber = AddVariableNode(node_ns, program_folder, "main_prog_number", main_prog_number_val)
-
-		sub_prog_number_val := int64(collectors[index].Program.SubProgNumber)
-		col_ns.prog_nodes.SubProgNumber = AddVariableNode(node_ns, program_folder, "sub_prog_number", sub_prog_number_val)
-
-		parts_count_val := int64(collectors[index].Program.PartsCount)
-		col_ns.prog_nodes.PartsCount = AddVariableNode(node_ns, program_folder, "parts_count", parts_count_val)
-
-		tool_number_val := int64(collectors[index].Program.ToolNumber)
-		col_ns.prog_nodes.ToolNumber = AddVariableNode(node_ns, program_folder, "tool_number", tool_number_val)
-
-		frame_number_val := int64(collectors[index].Program.FrameNumber)
-		col_ns.prog_nodes.FrameNumber = AddVariableNode(node_ns, program_folder, "frame_number", frame_number_val)
-
-		frame_err_val := string(collectors[index].Axes.AxesErr)
-		col_ns.prog_nodes.PrgErr = AddVariableNode(node_ns, program_folder, "prg_err", frame_err_val)
-
+		AddVariableNode(node_ns, program_folder, "frame", string(""))
+		AddVariableNode(node_ns, program_folder, "main_prog_number", int64(0))
+		AddVariableNode(node_ns, program_folder, "sub_prog_number", int64(0))
+		AddVariableNode(node_ns, program_folder, "parts_count", int64(0))
+		AddVariableNode(node_ns, program_folder, "tool_number", int64(0))
+		AddVariableNode(node_ns, program_folder, "frame_number", int64(0))
+		AddVariableNode(node_ns, program_folder, "prg_err", string(""))
 		//axes data folder + variables
 		axes_folder := GetFolderNode(node_ns, device_folder, "axes_data")
-
-		feedrate_val := int64(collectors[index].Axes.FeedRate)
-		col_ns.axis_nodes.FeedRate = AddVariableNode(node_ns, axes_folder, "feedrate", feedrate_val)
-
-		feed_override_val := int64(collectors[index].Axes.FeedOverride)
-		col_ns.axis_nodes.FeedOverride = AddVariableNode(node_ns, axes_folder, "feed_override", feed_override_val)
-
-		jog_override_val := float64(collectors[index].Axes.JogOverride)
-		col_ns.axis_nodes.JogOverride = AddVariableNode(node_ns, axes_folder, "jog_override", jog_override_val)
-
-		jog_speed_val := int64(collectors[index].Axes.JogSpeed)
-		col_ns.axis_nodes.JogSpeed = AddVariableNode(node_ns, axes_folder, "jog_speed", jog_speed_val)
-
-		current_load_val := float64(collectors[index].Axes.CurrentLoad)
-		col_ns.axis_nodes.CurrentLoad = AddVariableNode(node_ns, axes_folder, "current_load", current_load_val)
-
-		current_load_percent_val := float64(collectors[index].Axes.CurrentLoadPercent)
-		col_ns.axis_nodes.CurrentLoadPercent = AddVariableNode(node_ns, axes_folder, "current_load_percent", current_load_percent_val)
-
-		var sv_loads []string
-		for k, v := range collectors[index].Axes.ServoLoads {
-			sv_loads = append(sv_loads, fmt.Sprintf("%s: %d", k, v))
-		}
-		sv_loads_str := strings.Join(sv_loads, ", ")
-		col_ns.axis_nodes.ServoLoads = AddVariableNode(node_ns, axes_folder, "servo_loads", sv_loads_str)
-
-		axes_err_val := string(collectors[index].Axes.AxesErr)
-		col_ns.axis_nodes.AxesErr = AddVariableNode(node_ns, axes_folder, "axes_err", axes_err_val)
-
+		AddVariableNode(node_ns, axes_folder, "feedrate", int64(0))
+		AddVariableNode(node_ns, axes_folder, "feed_override", int64(0))
+		AddVariableNode(node_ns, axes_folder, "jog_override", float64(0))
+		AddVariableNode(node_ns, axes_folder, "jog_speed", int64(0))
+		AddVariableNode(node_ns, axes_folder, "current_load", float64(0))
+		AddVariableNode(node_ns, axes_folder, "current_load_percent", float64(0))
+		AddVariableNode(node_ns, axes_folder, "servo_loads", string(""))
+		AddVariableNode(node_ns, axes_folder, "axes_err", string(""))
 		//spindle data folder + variables
 		spindle_folder := GetFolderNode(node_ns, device_folder, "spindle_data")
+		AddVariableNode(node_ns, spindle_folder, "spindle_speed", int64(0))
+		AddVariableNode(node_ns, spindle_folder, "spindle_param_speed", int64(0))
+		AddVariableNode(node_ns, spindle_folder, "spindle_motor_speed", string(""))
+		AddVariableNode(node_ns, spindle_folder, "spindle_load", string(""))
+		AddVariableNode(node_ns, spindle_folder, "spindle_override", int64(0))
+		AddVariableNode(node_ns, spindle_folder, "spindle_err", string(""))
+		// Alarm data folader + variables
+		alarm_folder := GetFolderNode(node_ns, device_folder, "alarm_data")
+		AddVariableNode(node_ns, alarm_folder, "emergency", string(""))
+		AddVariableNode(node_ns, alarm_folder, "alarm_status", string(""))
+		AddVariableNode(node_ns, alarm_folder, "alarm_err", string(""))
 
-		spindle_speed_val := int64(collectors[index].Spindle.SpindleSpeed)
-		col_ns.spindle_nodes.SpindleSpeed = AddVariableNode(node_ns, spindle_folder, "spindle_speed", spindle_speed_val)
-
-		spindle_param_speed_val := int64(collectors[index].Spindle.SpindleSpeedParam)
-		col_ns.spindle_nodes.SpindleSpeedParam = AddVariableNode(node_ns, spindle_folder, "spindle_param_speed", spindle_param_speed_val)
-
-		var sp_motor_speeds []string
-		for k, v := range collectors[index].Spindle.SpindleMotorSpeed {
-			sp_motor_speeds = append(sp_motor_speeds, fmt.Sprintf("%s: %d", k, v))
-		}
-		motor_speeds_str := strings.Join(sp_motor_speeds, ", ")
-		col_ns.spindle_nodes.SpindleMotorSpeed = AddVariableNode(node_ns, spindle_folder, "spindle_motor_speed", motor_speeds_str)
-
-		var sp_loads []string
-		for k, v := range collectors[index].Spindle.SpindleLoad {
-			sp_loads = append(sp_loads, fmt.Sprintf("%s: %d", k, v))
-		}
-		sp_loads_str := strings.Join(sp_loads, ", ")
-		col_ns.spindle_nodes.SpindleLoad = AddVariableNode(node_ns, spindle_folder, "spindle_load", sp_loads_str)
-
-		spindle_override_val := int64(collectors[index].Spindle.SpindleOverride)
-		col_ns.spindle_nodes.SpindleOverride = AddVariableNode(node_ns, spindle_folder, "spindle_override", spindle_override_val)
-
-		spindle_err_val := string(collectors[index].Spindle.SpindleErr)
-		col_ns.spindle_nodes.SpindleErr = AddVariableNode(node_ns, spindle_folder, "spindle_err", spindle_err_val)
-
-		col_nodes = append(col_nodes, col_ns)
+		device_nodes = append(device_nodes, device_folder)
 	}
 }
 
@@ -507,14 +256,14 @@ func inicialize() {
 
 	var opts []server.Option
 
-	security_options := GetPoliciesOptions(config.Server.Security)
+	security_options := GetPoliciesOptions(config.Server.Security, available_policies, available_sec_modes)
 	if security_options == nil {
 		opts = append(opts, server.EnableSecurity("None", ua.MessageSecurityModeNone))
 	} else {
 		opts = append(opts, security_options...)
 	}
 
-	auth_options := GetAuthModeOptions(config.Server.AuthModes)
+	auth_options := GetAuthModeOptions(config.Server.AuthModes, available_auth_modes)
 	if auth_options == nil {
 		opts = append(opts, server.EnableAuthMode(ua.UserTokenTypeAnonymous))
 	} else {
@@ -525,20 +274,19 @@ func inicialize() {
 	endpoint_options := GetEndpointOptions(endpoints)
 	if endpoint_options == nil {
 		port := 4840
-		endpoints = []ImportEndpoint{{Endpoint: "0.0.0.0", Port: port}, {Endpoint: "localhost", Port: port}}
+		endpoints = []ImportEndpoint{{Endpoint: "localhost", Port: port}}
 		hostname, err := os.Hostname()
 		if err == nil {
 			endpoints = append(endpoints, ImportEndpoint{Endpoint: hostname, Port: port})
 		}
-	} else {
-		opts = append(opts, endpoint_options...)
+		endpoint_options = GetEndpointOptions(endpoints)
 	}
+	opts = append(opts, endpoint_options...)
 
 	logger := Logger(1)
 	opts = append(opts,
 		server.SetLogger(logger),
 	)
-
 	make_cert := config.Server.MakeCert
 
 	if make_cert {
@@ -570,11 +318,11 @@ func inicialize() {
 			if err != nil {
 				log.Fatalf("problem creating cert: %v", err)
 			}
-			err = os.WriteFile(*certfile, c, 0)
+			err = os.WriteFile(*certfile, c, 0644)
 			if err != nil {
 				log.Fatalf("problem writing cert: %v", err)
 			}
-			err = os.WriteFile(*keyfile, k, 0)
+			err = os.WriteFile(*keyfile, k, 0644)
 			if err != nil {
 				log.Fatalf("problem writing key: %v", err)
 			}
@@ -583,15 +331,15 @@ func inicialize() {
 				log.Fatalf("failed to parse PEM block for cert")
 			}
 			der_file := "cert.der"
-			err = os.WriteFile(der_file, der.Bytes, 0)
+			err = os.WriteFile(der_file, der.Bytes, 0644)
 			if err != nil {
 				log.Fatalf("problem writing DER cert: %v", err)
 			}
 		}
 	}
 
-	var cert []byte
-	if make_cert || (*certfile != "" && *keyfile != "") {
+	if StrContais("Certificate", config.Server.AuthModes) {
+		var cert []byte
 		log.Printf("Loading cert/key from %s/%s", *certfile, *keyfile)
 		c, err := tls.LoadX509KeyPair(*certfile, *keyfile)
 		if err != nil {
@@ -609,11 +357,11 @@ func inicialize() {
 	_server = server.New(opts...)
 	root_ns, _ := _server.Namespace(0)
 	root_obj_node := root_ns.Objects()
-	_node_ns = server.NewNodeNameSpace(_server, "Fanuc Devices")
-	nns_obj := _node_ns.Objects()
+	node_ns := server.NewNodeNameSpace(_server, "Fanuc Devices")
+	nns_obj := node_ns.Objects()
 	nns_obj.SetDescription("Fanuc devices data", "Fanuc devices data")
 	root_obj_node.AddRef(nns_obj, id.HasComponent, true)
-	CreateCollectorNodes(collectors_data, _node_ns)
+	CreateCollectorNodes(collectors_data, node_ns)
 }
 
 func start() {

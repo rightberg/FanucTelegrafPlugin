@@ -34,6 +34,7 @@ func AddVariableNode(node_ns *server.NodeNameSpace, node *server.Node, name stri
 		parent_id += "/"
 	}
 	node_id := ua.NewStringExpandedNodeID(node_ns.ID(), parent_id+name)
+	vf, _ := value.(func() *ua.DataValue)
 	attributes := map[ua.AttributeID]*ua.DataValue{
 		ua.AttributeIDNodeID:          server.DataValueFromValue(node_id),
 		ua.AttributeIDNodeClass:       server.DataValueFromValue(uint32(ua.NodeClassVariable)),
@@ -49,7 +50,12 @@ func AddVariableNode(node_ns *server.NodeNameSpace, node *server.Node, name stri
 		ua.AttributeIDHistorizing:     server.DataValueFromValue(bool(false)),
 		ua.AttributeIDValueRank:       server.DataValueFromValue(int32(-1)),
 	}
-	variable := server.NewNode(ua.NewNodeIDFromExpandedNodeID(node_id), attributes, nil, nil)
+	variable := server.NewNode(
+		ua.NewNodeIDFromExpandedNodeID(node_id),
+		attributes,
+		[]*ua.ReferenceDescription{},
+		vf,
+	)
 	variable.SetAttribute(ua.AttributeIDValue, server.DataValueFromValue(value))
 	node_ns.AddNode(variable)
 	node.AddRef(variable, id.HasComponent, true)

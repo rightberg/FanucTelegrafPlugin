@@ -47,7 +47,7 @@ var available_auth_modes = []string{
 
 var _server *server.Server
 var fanuc_ns = int(1)
-var device_nodes []*server.Node
+var device_addresses []string
 
 type Logger int
 
@@ -138,9 +138,9 @@ func UpdateDeviceNodes(collectors []CollectorData) {
 	node_ns := GetNodeNamespace(_server, fanuc_ns)
 	if node_ns != nil {
 		var device_address string
-		if len(device_nodes) == len(collectors) {
+		if len(device_addresses) == len(collectors) {
 			for index, collector := range collectors {
-				device_address = device_nodes[index].ID().String()
+				device_address = device_addresses[index]
 				// Device data
 				UpdateNodeValueAtAddress(node_ns, device_address+"/device_data/name", string(collector.Device.Name))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/device_data/address", string(collector.Device.Address))
@@ -188,39 +188,37 @@ func UpdateDeviceNodes(collectors []CollectorData) {
 	}
 }
 
-func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
+func CreateCollectorNodes(collectors []CollectorData, node_ns *server.NodeNameSpace) {
 	node_obj := node_ns.Objects()
-	collectors := data.Collectors
-	device_nodes = []*server.Node{}
 	for index := range collectors {
-		device_folder := GetFolderNode(node_ns, node_obj, data.Collectors[index].Device.Name)
-		//device folder + variables
+		device_folder := GetFolderNode(node_ns, node_obj, collectors[index].Device.Name)
+		//Device data
 		device_data_folder := GetFolderNode(node_ns, device_folder, "device_data")
-		AddVariableNode(node_ns, device_data_folder, "name", string(""))
-		AddVariableNode(node_ns, device_data_folder, "address", string(""))
 		AddVariableNode(node_ns, device_data_folder, "port", int64(0))
-		AddVariableNode(node_ns, device_data_folder, "series", string(""))
-		//mode data folder + variables
+		AddVariableNode(node_ns, device_data_folder, "name", "")
+		AddVariableNode(node_ns, device_data_folder, "address", "")
+		AddVariableNode(node_ns, device_data_folder, "series", "")
+		//Mode data
 		mode_folder := GetFolderNode(node_ns, device_folder, "mode_data")
-		AddVariableNode(node_ns, mode_folder, "mode", string(""))
-		AddVariableNode(node_ns, mode_folder, "run_state", string(""))
-		AddVariableNode(node_ns, mode_folder, "status", string(""))
-		AddVariableNode(node_ns, mode_folder, "shutdowns", string(""))
-		AddVariableNode(node_ns, mode_folder, "hight_speed", string(""))
-		AddVariableNode(node_ns, mode_folder, "axis_motion", string(""))
-		AddVariableNode(node_ns, mode_folder, "mstb", string(""))
-		AddVariableNode(node_ns, mode_folder, "load_excess", string(""))
-		AddVariableNode(node_ns, mode_folder, "mode_err", string(""))
-		//program data folder + variables
+		AddVariableNode(node_ns, mode_folder, "mode", "")
+		AddVariableNode(node_ns, mode_folder, "run_state", "")
+		AddVariableNode(node_ns, mode_folder, "status", "")
+		AddVariableNode(node_ns, mode_folder, "shutdowns", "")
+		AddVariableNode(node_ns, mode_folder, "hight_speed", "")
+		AddVariableNode(node_ns, mode_folder, "axis_motion", "")
+		AddVariableNode(node_ns, mode_folder, "mstb", "")
+		AddVariableNode(node_ns, mode_folder, "load_excess", "")
+		AddVariableNode(node_ns, mode_folder, "mode_err", "")
+		//Program data
 		program_folder := GetFolderNode(node_ns, device_folder, "program_data")
-		AddVariableNode(node_ns, program_folder, "frame", string(""))
 		AddVariableNode(node_ns, program_folder, "main_prog_number", int64(0))
 		AddVariableNode(node_ns, program_folder, "sub_prog_number", int64(0))
 		AddVariableNode(node_ns, program_folder, "parts_count", int64(0))
 		AddVariableNode(node_ns, program_folder, "tool_number", int64(0))
 		AddVariableNode(node_ns, program_folder, "frame_number", int64(0))
-		AddVariableNode(node_ns, program_folder, "prg_err", string(""))
-		//axes data folder + variables
+		AddVariableNode(node_ns, program_folder, "frame", "")
+		AddVariableNode(node_ns, program_folder, "prg_err", "")
+		//Axes data
 		axes_folder := GetFolderNode(node_ns, device_folder, "axes_data")
 		AddVariableNode(node_ns, axes_folder, "feedrate", int64(0))
 		AddVariableNode(node_ns, axes_folder, "feed_override", int64(0))
@@ -228,23 +226,23 @@ func CreateCollectorNodes(data CollectorsData, node_ns *server.NodeNameSpace) {
 		AddVariableNode(node_ns, axes_folder, "jog_speed", int64(0))
 		AddVariableNode(node_ns, axes_folder, "current_load", float64(0))
 		AddVariableNode(node_ns, axes_folder, "current_load_percent", float64(0))
-		AddVariableNode(node_ns, axes_folder, "servo_loads", string(""))
-		AddVariableNode(node_ns, axes_folder, "axes_err", string(""))
-		//spindle data folder + variables
+		AddVariableNode(node_ns, axes_folder, "servo_loads", "")
+		AddVariableNode(node_ns, axes_folder, "axes_err", "")
+		//Spindle data
 		spindle_folder := GetFolderNode(node_ns, device_folder, "spindle_data")
 		AddVariableNode(node_ns, spindle_folder, "spindle_speed", int64(0))
 		AddVariableNode(node_ns, spindle_folder, "spindle_param_speed", int64(0))
-		AddVariableNode(node_ns, spindle_folder, "spindle_motor_speed", string(""))
-		AddVariableNode(node_ns, spindle_folder, "spindle_load", string(""))
 		AddVariableNode(node_ns, spindle_folder, "spindle_override", int64(0))
-		AddVariableNode(node_ns, spindle_folder, "spindle_err", string(""))
-		// Alarm data folader + variables
+		AddVariableNode(node_ns, spindle_folder, "spindle_motor_speed", "")
+		AddVariableNode(node_ns, spindle_folder, "spindle_load", "")
+		AddVariableNode(node_ns, spindle_folder, "spindle_err", "")
+		// Alarm data
 		alarm_folder := GetFolderNode(node_ns, device_folder, "alarm_data")
-		AddVariableNode(node_ns, alarm_folder, "emergency", string(""))
-		AddVariableNode(node_ns, alarm_folder, "alarm_status", string(""))
-		AddVariableNode(node_ns, alarm_folder, "alarm_err", string(""))
+		AddVariableNode(node_ns, alarm_folder, "emergency", "")
+		AddVariableNode(node_ns, alarm_folder, "alarm_status", "")
+		AddVariableNode(node_ns, alarm_folder, "alarm_err", "")
 
-		device_nodes = append(device_nodes, device_folder)
+		device_addresses = append(device_addresses, device_folder.ID().String())
 	}
 }
 
@@ -286,15 +284,14 @@ func inicialize() {
 	opts = append(opts,
 		server.SetLogger(logger),
 	)
-	make_cert := config.Server.MakeCert
 
+	make_cert := config.Server.MakeCert
 	if make_cert {
 		var endpoints_str []string
 		if endpoints == nil {
 		}
 		for _, imp_endpoint := range endpoints {
 			endpoints_str = append(endpoints_str, imp_endpoint.Endpoint)
-			endpoints_str = append(endpoints_str, "urn:LAPTOP-CV2C04U9:GOPCUA")
 		}
 
 		cert_created := false
@@ -361,7 +358,7 @@ func inicialize() {
 	nns_obj := node_ns.Objects()
 	nns_obj.SetDescription("Fanuc devices data", "Fanuc devices data")
 	root_obj_node.AddRef(nns_obj, id.HasComponent, true)
-	CreateCollectorNodes(collectors_data, node_ns)
+	CreateCollectorNodes(collectors_data.Collectors, node_ns)
 }
 
 func start() {

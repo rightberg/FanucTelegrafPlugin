@@ -20,18 +20,18 @@ type ImportEndpoint struct {
 
 type Server struct {
 	Status    bool              `yaml:"status"`
-	Security  map[string]string `yaml:"security"`
-	AuthModes []string          `yaml:"auth_modes"`
-	Endpoints []ImportEndpoint  `yaml:"endpoints"`
 	MakeCert  bool              `yaml:"make_cert"`
 	MakeCSV   bool              `yaml:"make_csv"`
+	AuthModes []string          `yaml:"auth_modes"`
+	Endpoints []ImportEndpoint  `yaml:"endpoints"`
+	Security  map[string]string `yaml:"security"`
 }
 
 type Device struct {
 	Name    string `json:"name" yaml:"name"`
 	Address string `json:"address" yaml:"address"`
-	Port    int    `json:"port" yaml:"port"`
 	Series  string `json:"series" yaml:"series"`
+	Port    int    `json:"port" yaml:"port"`
 }
 
 type Config struct {
@@ -139,8 +139,9 @@ func main() {
 		}
 		inicialize()
 		if config.Server.MakeCSV {
-			for index := range device_nodes {
-				MakeCSV(GetTagsAtOpcNodes(config.Devices[index].Name), config.Devices[index].Name, plugin_dir)
+			for index := range device_addresses {
+				device_name := config.Devices[index].Name
+				MakeCSV(GetTagsAtOpcNodes(device_name), device_name, plugin_dir)
 			}
 		}
 		go start()

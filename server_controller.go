@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -286,6 +287,9 @@ func inicialize() {
 	)
 
 	make_cert := config.Server.MakeCert
+	cert_pem_path := filepath.Join(plugin_dir, *certfile)
+	cert_der_path := filepath.Join(plugin_dir, "cert.der")
+	key_pem_path := filepath.Join(plugin_dir, *keyfile)
 	if make_cert {
 		var endpoints_str []string
 		if endpoints == nil {
@@ -295,17 +299,17 @@ func inicialize() {
 		}
 
 		cert_created := false
-		if _, err := os.Stat(*certfile); err == nil {
+		if _, err := os.Stat(cert_pem_path); err == nil {
 			log.Printf("Файл %s уже существует, пропускаем генерацию", *certfile)
 			cert_created = true
 		}
 		key_created := false
-		if _, err := os.Stat(*keyfile); err == nil {
+		if _, err := os.Stat(key_pem_path); err == nil {
 			log.Printf("Файл %s уже существует, пропускаем генерацию", *keyfile)
 			key_created = true
 		}
 		cert_der_created := false
-		if _, err := os.Stat("cert.der"); err == nil {
+		if _, err := os.Stat(cert_der_path); err == nil {
 			log.Printf("Файл %s уже существует, пропускаем генерацию", "cert.der")
 			cert_der_created = true
 		}
@@ -315,11 +319,11 @@ func inicialize() {
 			if err != nil {
 				log.Fatalf("problem creating cert: %v", err)
 			}
-			err = os.WriteFile(*certfile, c, 0644)
+			err = os.WriteFile(cert_pem_path, c, 0644)
 			if err != nil {
 				log.Fatalf("problem writing cert: %v", err)
 			}
-			err = os.WriteFile(*keyfile, k, 0644)
+			err = os.WriteFile(key_pem_path, k, 0644)
 			if err != nil {
 				log.Fatalf("problem writing key: %v", err)
 			}
@@ -327,8 +331,7 @@ func inicialize() {
 			if der == nil {
 				log.Fatalf("failed to parse PEM block for cert")
 			}
-			der_file := "cert.der"
-			err = os.WriteFile(der_file, der.Bytes, 0644)
+			err = os.WriteFile(cert_der_path, der.Bytes, 0644)
 			if err != nil {
 				log.Fatalf("problem writing DER cert: %v", err)
 			}
@@ -338,7 +341,7 @@ func inicialize() {
 	if StrContais("Certificate", config.Server.AuthModes) {
 		var cert []byte
 		log.Printf("Loading cert/key from %s/%s", *certfile, *keyfile)
-		c, err := tls.LoadX509KeyPair(*certfile, *keyfile)
+		c, err := tls.LoadX509KeyPair(cert_pem_path, key_pem_path)
 		if err != nil {
 			log.Printf("Failed to load certificate: %s", err)
 		} else {

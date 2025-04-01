@@ -104,6 +104,7 @@ type CollectorsData struct {
 
 var collectors_data CollectorsData
 var config Config
+var plugin_dir string
 
 func main() {
 	plugin_path, err := os.Executable()
@@ -112,7 +113,7 @@ func main() {
 		return
 	}
 
-	plugin_dir := filepath.Dir(plugin_path)
+	plugin_dir = filepath.Dir(plugin_path)
 	data_path := filepath.Join(plugin_dir, "plugin.conf")
 	fileContent, err := os.ReadFile(data_path)
 	if err != nil {

@@ -1,7 +1,12 @@
 package main
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"github.com/gopcua/opcua/id"
@@ -223,4 +228,55 @@ func GetEndpointOptions(endpoints []ImportEndpoint) []server.Option {
 		return nil
 	}
 	return options
+}
+
+func AddCert(cert_path string) server.Option {
+	certDER, err := os.ReadFile(cert_path)
+	if err == nil {
+		if _, err := x509.ParseCertificate(certDER); err != nil {
+			log.Printf("Error parsing DER certificate: %v", err)
+		} else {
+			return server.Certificate(certDER)
+		}
+	}
+	return nil
+}
+
+func AddPK(key_path string) server.Option {
+	keyBytes, err := os.ReadFile(key_path)
+	if err != nil {
+		log.Fatalf("Failed to read key file: %v", err)
+	}
+
+	// Декодирование PEM-блока
+	block, _ := pem.Decode(keyBytes)
+	if block == nil {
+		log.Fatalf("Failed to decode PEM block containing the key")
+	}
+
+	var privateKey *rsa.PrivateKey
+
+	// Разбор ключа в зависимости от типа PEM-блока
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		privateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			log.Fatalf("Failed to parse PKCS1 private key: %v", err)
+		}
+	case "PRIVATE KEY":
+		keyInterface, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			log.Fatalf("Failed to parse PKCS8 private key: %v", err)
+		}
+		var ok bool
+		privateKey, ok = keyInterface.(*rsa.PrivateKey)
+		if !ok {
+			log.Fatalf("Parsed key is not an RSA private key")
+		}
+	default:
+		log.Fatalf("Unknown key type %q", block.Type)
+	}
+
+	// После успешного получения приватного ключа, можно добавить его в опции
+	return server.PrivateKey(privateKey)
 }

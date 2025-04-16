@@ -95,15 +95,26 @@ func GetDeviceNodes(device_name string) []*server.Node {
 		"/mode_data/shutdowns",
 		"/mode_data/hight_speed",
 		"/mode_data/axis_motion",
+		"/mode_data/mstb",
 		"/mode_data/load_excess",
-		"/mode_data/mode_err",
+		"/mode_data/mode_str",
+		"/mode_data/run_state_str",
+		"/mode_data/status_str",
+		"/mode_data/shutdowns_str",
+		"/mode_data/hight_speed_str",
+		"/mode_data/axis_motion_str",
+		"/mode_data/mstb_str",
+		"/mode_data/load_excess_str",
+		"/mode_data/mode_errors",
+		"/mode_data/mode_errors_str",
 		"/program_data/frame",
 		"/program_data/main_prog_number",
 		"/program_data/sub_prog_number",
 		"/program_data/parts_count",
 		"/program_data/tool_number",
 		"/program_data/frame_number",
-		"/program_data/prg_err",
+		"/program_data/prg_errors",
+		"/program_data/prg_errors_str",
 		"/axes_data/feedrate",
 		"/axes_data/feed_override",
 		"/axes_data/jog_override",
@@ -111,16 +122,21 @@ func GetDeviceNodes(device_name string) []*server.Node {
 		"/axes_data/current_load",
 		"/axes_data/current_load_percent",
 		"/axes_data/servo_loads",
-		"/axes_data/axes_err",
+		"/axes_data/axes_errors",
+		"/axes_data/axes_errors_str",
 		"/spindle_data/spindle_speed",
 		"/spindle_data/spindle_param_speed",
 		"/spindle_data/spindle_override",
 		"/spindle_data/spindle_motor_speed",
 		"/spindle_data/spindle_load",
-		"/spindle_data/spindle_err",
+		"/spindle_data/spindle_errors",
+		"/spindle_data/spindle_errors_str",
 		"/alarm_data/emergency",
 		"/alarm_data/alarm_status",
-		"/alarm_data/alarm_err",
+		"/alarm_data/emergency_str",
+		"/alarm_data/alarm_status_str",
+		"/alarm_data/alarm_errors",
+		"/alarm_data/alarm_errors_str",
 	}
 	node_ns := GetNodeNamespace(_server, fanuc_ns)
 	if node_ns != nil {
@@ -148,14 +164,24 @@ func UpdateDeviceNodes(collectors []CollectorData) {
 				UpdateNodeValueAtAddress(node_ns, device_address+"/device_data/port", int64(collector.Device.Port))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/device_data/series", string(collector.Device.Series))
 				// Mode data
-				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/mode", string(collector.Mode.Mode))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/run_state", string(collector.Mode.RunState))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/status", string(collector.Mode.Status))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/shutdowns", string(collector.Mode.Shutdowns))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/hight_speed", string(collector.Mode.HightSpeed))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/axis_motion", string(collector.Mode.AxisMotion))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/load_excess", string(collector.Mode.LoadExcess))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/mode_err", string(collector.Mode.ModeErr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/mode", int16(collector.Mode.Mode))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/run_state", int16(collector.Mode.RunState))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/status", int16(collector.Mode.Status))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/shutdowns", int16(collector.Mode.Shutdowns))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/hight_speed", int16(collector.Mode.HightSpeed))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/axis_motion", int16(collector.Mode.AxisMotion))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/mstb", int16(collector.Mode.Mstb))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/load_excess", int64(collector.Mode.LoadExcess))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/mode_str", string(collector.Mode.ModeStr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/run_state_str", string(collector.Mode.RunStateStr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/status_str", string(collector.Mode.StatusStr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/shutdowns_str", string(collector.Mode.ShutdownsStr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/hight_speed_str", string(collector.Mode.HightSpeedStr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/axis_motion_str", string(collector.Mode.AxisMotionStr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/mstb_str", string(collector.Mode.MstbStr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/load_excess_str", string(collector.Mode.LoadExcessStr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/mode_errors", []int16(collector.Mode.ModeErrors))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/mode_data/mode_errors_str", []string(collector.Mode.ModeErrorsStr))
 				// Program data
 				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/frame", string(collector.Program.Frame))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/main_prog_number", int64(collector.Program.MainProgNumber))
@@ -163,7 +189,8 @@ func UpdateDeviceNodes(collectors []CollectorData) {
 				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/parts_count", int64(collector.Program.PartsCount))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/tool_number", int64(collector.Program.ToolNumber))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/frame_number", int64(collector.Program.FrameNumber))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/prg_err", string(collector.Program.PrgErr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/prg_errors", []int16(collector.Program.ProgErrors))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/program_data/prg_errors_str", []string(collector.Program.ProgErrorsStr))
 				// Axes data
 				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/feedrate", int64(collector.Axes.FeedRate))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/feed_override", int64(collector.Axes.FeedOverride))
@@ -172,18 +199,24 @@ func UpdateDeviceNodes(collectors []CollectorData) {
 				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/current_load", float64(collector.Axes.CurrentLoad))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/current_load_percent", float64(collector.Axes.CurrentLoadPercent))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/servo_loads", string(MapToStr(collector.Axes.ServoLoads)))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/axes_err", string(collector.Axes.AxesErr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/axes_errors", []int16(collector.Axes.AxesErrors))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/axes_data/axes_errors_str", []string(collector.Axes.AxesErrorsStr))
 				// Spindle data
 				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_speed", int64(collector.Spindle.SpindleSpeed))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_param_speed", int64(collector.Spindle.SpindleSpeedParam))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_override", int64(collector.Spindle.SpindleOverride))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_motor_speed", string(MapToStr(collector.Spindle.SpindleMotorSpeed)))
 				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_load", string(MapToStr(collector.Spindle.SpindleLoad)))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_err", string(collector.Spindle.SpindleErr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_errors", []int16(collector.Spindle.SpindleErrors))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_data/spindle_errors_str", []string(collector.Spindle.SpindleErrorsStr))
 				// Alarm data
-				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/emergency", string(collector.Alarm.Emergency))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/alarm_status", string(collector.Alarm.AlarmStatus))
-				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/alarm_err", string(collector.Alarm.AlarmErr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/emergency", int16(collector.Alarm.Emergency))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/alarm_status", int16(collector.Alarm.AlarmStatus))
+
+				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/emergency_str", string(collector.Alarm.EmergencyStr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/alarm_status_str", string(collector.Alarm.AlarmStatusStr))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/alarm_errors", []int16(collector.Alarm.AlarmErrors))
+				UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_data/alarm_errors_str", []string(collector.Alarm.AlarmErrorsStr))
 			}
 		}
 	}
@@ -201,15 +234,24 @@ func CreateCollectorNodes(collectors []CollectorData, node_ns *server.NodeNameSp
 		AddVariableNode(node_ns, device_data_folder, "series", "")
 		//Mode data
 		mode_folder := GetFolderNode(node_ns, device_folder, "mode_data")
-		AddVariableNode(node_ns, mode_folder, "mode", "")
-		AddVariableNode(node_ns, mode_folder, "run_state", "")
-		AddVariableNode(node_ns, mode_folder, "status", "")
-		AddVariableNode(node_ns, mode_folder, "shutdowns", "")
-		AddVariableNode(node_ns, mode_folder, "hight_speed", "")
-		AddVariableNode(node_ns, mode_folder, "axis_motion", "")
-		AddVariableNode(node_ns, mode_folder, "mstb", "")
-		AddVariableNode(node_ns, mode_folder, "load_excess", "")
-		AddVariableNode(node_ns, mode_folder, "mode_err", "")
+		AddVariableNode(node_ns, mode_folder, "mode", int16(0))
+		AddVariableNode(node_ns, mode_folder, "run_state", int16(0))
+		AddVariableNode(node_ns, mode_folder, "status", int16(0))
+		AddVariableNode(node_ns, mode_folder, "shutdowns", int16(0))
+		AddVariableNode(node_ns, mode_folder, "hight_speed", int16(0))
+		AddVariableNode(node_ns, mode_folder, "axis_motion", int16(0))
+		AddVariableNode(node_ns, mode_folder, "mstb", int16(0))
+		AddVariableNode(node_ns, mode_folder, "load_excess", int64(0))
+		AddVariableNode(node_ns, mode_folder, "mode_str", "")
+		AddVariableNode(node_ns, mode_folder, "run_state_str", "")
+		AddVariableNode(node_ns, mode_folder, "status_str", "")
+		AddVariableNode(node_ns, mode_folder, "shutdowns_str", "")
+		AddVariableNode(node_ns, mode_folder, "hight_speed_str", "")
+		AddVariableNode(node_ns, mode_folder, "axis_motion_str", "")
+		AddVariableNode(node_ns, mode_folder, "mstb_str", "")
+		AddVariableNode(node_ns, mode_folder, "load_excess_str", "")
+		AddVariableNode(node_ns, mode_folder, "mode_errors", make([]int16, 8))
+		AddVariableNode(node_ns, mode_folder, "mode_errors_str", make([]string, 8))
 		//Program data
 		program_folder := GetFolderNode(node_ns, device_folder, "program_data")
 		AddVariableNode(node_ns, program_folder, "main_prog_number", int64(0))
@@ -218,7 +260,8 @@ func CreateCollectorNodes(collectors []CollectorData, node_ns *server.NodeNameSp
 		AddVariableNode(node_ns, program_folder, "tool_number", int64(0))
 		AddVariableNode(node_ns, program_folder, "frame_number", int64(0))
 		AddVariableNode(node_ns, program_folder, "frame", "")
-		AddVariableNode(node_ns, program_folder, "prg_err", "")
+		AddVariableNode(node_ns, program_folder, "program_errors", make([]int16, 6))
+		AddVariableNode(node_ns, program_folder, "program_errors_str", make([]string, 6))
 		//Axes data
 		axes_folder := GetFolderNode(node_ns, device_folder, "axes_data")
 		AddVariableNode(node_ns, axes_folder, "feedrate", int64(0))
@@ -228,7 +271,8 @@ func CreateCollectorNodes(collectors []CollectorData, node_ns *server.NodeNameSp
 		AddVariableNode(node_ns, axes_folder, "current_load", float64(0))
 		AddVariableNode(node_ns, axes_folder, "current_load_percent", float64(0))
 		AddVariableNode(node_ns, axes_folder, "servo_loads", "")
-		AddVariableNode(node_ns, axes_folder, "axes_err", "")
+		AddVariableNode(node_ns, axes_folder, "axes_errors", make([]int16, 7))
+		AddVariableNode(node_ns, axes_folder, "axes_errors_str", make([]string, 7))
 		//Spindle data
 		spindle_folder := GetFolderNode(node_ns, device_folder, "spindle_data")
 		AddVariableNode(node_ns, spindle_folder, "spindle_speed", int64(0))
@@ -236,19 +280,22 @@ func CreateCollectorNodes(collectors []CollectorData, node_ns *server.NodeNameSp
 		AddVariableNode(node_ns, spindle_folder, "spindle_override", int64(0))
 		AddVariableNode(node_ns, spindle_folder, "spindle_motor_speed", "")
 		AddVariableNode(node_ns, spindle_folder, "spindle_load", "")
-		AddVariableNode(node_ns, spindle_folder, "spindle_err", "")
+		AddVariableNode(node_ns, spindle_folder, "spindle_errors", make([]int16, 5))
+		AddVariableNode(node_ns, spindle_folder, "spindle_errors_str", make([]string, 5))
 		// Alarm data
 		alarm_folder := GetFolderNode(node_ns, device_folder, "alarm_data")
 		AddVariableNode(node_ns, alarm_folder, "emergency", "")
 		AddVariableNode(node_ns, alarm_folder, "alarm_status", "")
-		AddVariableNode(node_ns, alarm_folder, "alarm_err", "")
-
+		AddVariableNode(node_ns, alarm_folder, "emergency_str", "")
+		AddVariableNode(node_ns, alarm_folder, "alarm_status_str", "")
+		AddVariableNode(node_ns, alarm_folder, "alarm_errors", make([]int16, 2))
+		AddVariableNode(node_ns, alarm_folder, "alarm_errors_str", make([]string, 2))
 		device_addresses = append(device_addresses, device_folder.ID().String())
 	}
 }
 
 func inicialize() {
-	flag.BoolVar(&debug.Enable, "debug", false, "enable debug logging")
+	flag.BoolVar(&debug.Enable, "debug", config.Server.Debug, "enable debug logging")
 	flag.Parse()
 	log.SetFlags(0)
 
@@ -352,6 +399,28 @@ func inicialize() {
 			cert = c.Certificate[0]
 			opts = append(opts, server.PrivateKey(pk), server.Certificate(cert))
 		}
+
+		lcerts := config.Server.TrustedCerts
+		if len(lcerts) > 0 {
+			for _, lcert := range lcerts {
+				opt := AddCert(lcert)
+				if opt != nil {
+					opts = append(opts, opt)
+					fmt.Println(lcert)
+				}
+			}
+		}
+
+		lkeys := config.Server.TrustedKeys
+		if len(lkeys) > 0 {
+			for _, lkey := range lkeys {
+				opt := AddPK(lkey)
+				if opt != nil {
+					opts = append(opts, opt)
+					fmt.Println(lkey)
+				}
+			}
+		}
 	}
 
 	_server = server.New(opts...)
@@ -362,6 +431,13 @@ func inicialize() {
 	nns_obj.SetDescription("Fanuc devices data", "Fanuc devices data")
 	root_obj_node.AddRef(nns_obj, id.HasComponent, true)
 	CreateCollectorNodes(collectors_data.Collectors, node_ns)
+
+	if config.Server.MakeCSV {
+		for index := range device_addresses {
+			device_name := config.Devices[index].Name
+			MakeCSV(GetTagsAtOpcNodes(device_name), device_name, plugin_dir)
+		}
+	}
 }
 
 func start() {

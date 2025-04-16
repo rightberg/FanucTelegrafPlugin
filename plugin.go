@@ -19,12 +19,15 @@ type ImportEndpoint struct {
 }
 
 type Server struct {
-	Status    bool              `yaml:"status"`
-	MakeCert  bool              `yaml:"make_cert"`
-	MakeCSV   bool              `yaml:"make_csv"`
-	AuthModes []string          `yaml:"auth_modes"`
-	Endpoints []ImportEndpoint  `yaml:"endpoints"`
-	Security  map[string]string `yaml:"security"`
+	Status       bool              `yaml:"status"`
+	Debug        bool              `yaml:"debug"`
+	MakeCert     bool              `yaml:"make_cert"`
+	MakeCSV      bool              `yaml:"make_csv"`
+	AuthModes    []string          `yaml:"auth_modes"`
+	TrustedCerts []string          `yaml:"trusted_certs"`
+	TrustedKeys  []string          `yaml:"trusted_keys"`
+	Endpoints    []ImportEndpoint  `yaml:"endpoints"`
+	Security     map[string]string `yaml:"security"`
 }
 
 type Device struct {
@@ -35,32 +38,44 @@ type Device struct {
 }
 
 type Config struct {
-	CollectorPath string   `json:"collector path" yaml:"collector_path"`
+	CollectorPath string   `json:"collector_path" yaml:"collector_path"`
 	Interval      float32  `json:"interval" yaml:"interval"`
 	Server        Server   `json:"server" yaml:"server"`
 	Devices       []Device `json:"devices" yaml:"devices"`
 }
 
 type ModeData struct {
-	Mode       string `json:"mode"`
-	RunState   string `json:"run_state"`
-	Status     string `json:"status"`
-	Shutdowns  string `json:"shutdowns"`
-	HightSpeed string `json:"hight_speed"`
-	AxisMotion string `json:"axis_motion"`
-	Mstb       string `json:"mstb" yaml:"mstb"`
-	LoadExcess string `json:"load_excess"`
-	ModeErr    string `json:"mode_err"`
+	Mode          int16  `json:"mode"`
+	RunState      int16  `json:"run_state"`
+	Status        int16  `json:"status"`
+	Shutdowns     int16  `json:"shutdowns"`
+	HightSpeed    int16  `json:"hight_speed"`
+	AxisMotion    int16  `json:"axis_motion"`
+	Mstb          int16  `json:"mstb" yaml:"mstb"`
+	LoadExcess    int64  `json:"load_excess"`
+	ModeStr       string `json:"mode_str"`
+	RunStateStr   string `json:"run_state_str"`
+	StatusStr     string `json:"status_str"`
+	ShutdownsStr  string `json:"shutdowns_str"`
+	HightSpeedStr string `json:"hight_speed_str"`
+	AxisMotionStr string `json:"axis_motion_str"`
+	MstbStr       string `json:"mstb_str"`
+	LoadExcessStr string `json:"load_excess_str"`
+
+	ModeErrors    []int16  `json:"mode_errors"`
+	ModeErrorsStr []string `json:"mode_errors_str"`
 }
 
 type ProgramData struct {
-	Frame          string `json:"frame" yaml:"frame"`
-	MainProgNumber int    `json:"main_prog_number"`
-	SubProgNumber  int    `json:"sub_prog_number"`
+	Frame          string `json:"frame"`
+	MainProgNumber int16  `json:"main_prog_number"`
+	SubProgNumber  int16  `json:"sub_prog_number"`
 	PartsCount     int    `json:"parts_count"`
 	ToolNumber     int    `json:"tool_number"`
 	FrameNumber    int    `json:"frame_number"`
-	PrgErr         string `json:"prg_err"`
+
+	ProgErrors    []int16  `json:"program_errors"`
+	ProgErrorsStr []string `json:"program_errors_str"`
 }
 
 type AxesData struct {
@@ -71,7 +86,9 @@ type AxesData struct {
 	CurrentLoad        float64        `json:"current_load"`
 	CurrentLoadPercent float64        `json:"current_load_percent"`
 	ServoLoads         map[string]int `json:"servo_loads"`
-	AxesErr            string         `json:"axes_err"`
+
+	AxesErrors    []int16  `json:"axes_errors"`
+	AxesErrorsStr []string `json:"axes_errors_str"`
 }
 
 type SpindleData struct {
@@ -79,14 +96,21 @@ type SpindleData struct {
 	SpindleSpeedParam int            `json:"spindle_param_speed"`
 	SpindleMotorSpeed map[string]int `json:"spindle_motor_speed"`
 	SpindleLoad       map[string]int `json:"spindle_load"`
-	SpindleOverride   int            `json:"spindle_override"`
-	SpindleErr        string         `json:"spindle_err"`
+	SpindleOverride   int16          `json:"spindle_override"`
+
+	SpindleErrors    []int16  `json:"spindle_errors"`
+	SpindleErrorsStr []string `json:"spindle_errors_str"`
 }
 
 type AlarmData struct {
-	Emergency   string `json:"emergency"`
-	AlarmStatus string `json:"alarm_status"`
-	AlarmErr    string `json:"alarm_err"`
+	Emergency   int16 `json:"emergency"`
+	AlarmStatus int16 `json:"alarm_status"`
+
+	EmergencyStr   string `json:"emergency_str"`
+	AlarmStatusStr string `json:"alarm_status_str"`
+
+	AlarmErrors    []int16  `json:"alarm_errors"`
+	AlarmErrorsStr []string `json:"alarm_errors_str"`
 }
 
 type CollectorData struct {
@@ -100,6 +124,11 @@ type CollectorData struct {
 
 type CollectorsData struct {
 	Collectors []CollectorData `json:"collectors"`
+}
+
+type TableRow struct {
+	Name  string
+	Value float64
 }
 
 var collectors_data CollectorsData
@@ -139,12 +168,6 @@ func main() {
 			collectors_data.Collectors[index].Device.Name = config.Devices[index].Name
 		}
 		inicialize()
-		if config.Server.MakeCSV {
-			for index := range device_addresses {
-				device_name := config.Devices[index].Name
-				MakeCSV(GetTagsAtOpcNodes(device_name), device_name, plugin_dir)
-			}
-		}
 		go start()
 	}
 
@@ -162,7 +185,7 @@ func main() {
 
 		cmd := exec.Command(collector_path, string(json_data))
 
-		output, err := cmd.Output()
+		output, err := cmd.CombinedOutput()
 		if err != nil {
 			fmt.Printf("Ошибка сборщика: %s\n", err.Error())
 			panic(err)

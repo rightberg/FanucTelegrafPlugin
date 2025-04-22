@@ -67,6 +67,10 @@ func AddVariableNode(node_ns *server.NodeNameSpace, node *server.Node, name stri
 	return variable
 }
 
+func SetValueRank(node *server.Node, value int32) {
+	node.SetAttribute(ua.AttributeIDValueRank, server.DataValueFromValue(value))
+}
+
 func GetFolderNode(node_ns *server.NodeNameSpace, node *server.Node, name string) *server.Node {
 	parent_id := node.ID().StringID()
 	if parent_id != "" {

@@ -18,10 +18,12 @@ type CSVNode struct {
 
 func GetCSVType(value any) string {
 	switch value.(type) {
-	case int, int8, int16, int32, int64:
+	case int, int8, int16, int32:
 		return "Word"
-	case uint, uint8, uint16, uint32, uint64:
+	case uint, uint8, uint16, uint32:
 		return "Word"
+	case int64, uint64:
+		return "Long"
 	case float32, float64:
 		return "Float"
 	case string:

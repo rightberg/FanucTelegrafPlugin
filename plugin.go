@@ -1,13 +1,21 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strconv"
+	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -38,120 +46,101 @@ type Device struct {
 }
 
 type Config struct {
-	CollectorPath string   `json:"collector_path" yaml:"collector_path"`
-	Interval      float32  `json:"interval" yaml:"interval"`
-	Server        Server   `json:"server" yaml:"server"`
-	Devices       []Device `json:"devices" yaml:"devices"`
+	Interval float32  `json:"interval" yaml:"interval"`
+	Server   Server   `json:"server" yaml:"server"`
+	Devices  []Device `json:"devices" yaml:"devices"`
 }
 
-type ModeData struct {
-	Mode          int16  `json:"mode"`
-	RunState      int16  `json:"run_state"`
-	Status        int16  `json:"status"`
-	Shutdowns     int16  `json:"shutdowns"`
-	HightSpeed    int16  `json:"hight_speed"`
-	AxisMotion    int16  `json:"axis_motion"`
-	Mstb          int16  `json:"mstb" yaml:"mstb"`
-	LoadExcess    int64  `json:"load_excess"`
-	ModeStr       string `json:"mode_str"`
-	RunStateStr   string `json:"run_state_str"`
-	StatusStr     string `json:"status_str"`
-	ShutdownsStr  string `json:"shutdowns_str"`
-	HightSpeedStr string `json:"hight_speed_str"`
-	AxisMotionStr string `json:"axis_motion_str"`
-	MstbStr       string `json:"mstb_str"`
-	LoadExcessStr string `json:"load_excess_str"`
-
-	ModeErrors    []int16  `json:"mode_errors"`
-	ModeErrorsStr []string `json:"mode_errors_str"`
-}
-
-type ProgramData struct {
+type FanucData struct {
+	// device data
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	Series  string `json:"series"`
+	Port    int    `json:"port"`
+	// mode data
+	Mode       int16 `json:"mode"`
+	RunState   int16 `json:"run_state"`
+	Status     int16 `json:"status"`
+	Shutdowns  int16 `json:"shutdowns"`
+	HightSpeed int16 `json:"hight_speed"`
+	AxisMotion int16 `json:"axis_motion"`
+	Mstb       int16 `json:"mstb"`
+	LoadExcess int64 `json:"load_excess"`
+	// program data
 	Frame          string `json:"frame"`
 	MainProgNumber int16  `json:"main_prog_number"`
 	SubProgNumber  int16  `json:"sub_prog_number"`
 	PartsCount     int    `json:"parts_count"`
-	ToolNumber     int    `json:"tool_number"`
-	FrameNumber    int    `json:"frame_number"`
-
-	ProgErrors    []int16  `json:"program_errors"`
-	ProgErrorsStr []string `json:"program_errors_str"`
-}
-
-type AxesData struct {
-	FeedRate           int            `json:"feedrate"`
-	FeedOverride       int            `json:"feed_override"`
-	JogOverride        float64        `json:"jog_override"`
-	JogSpeed           int            `json:"jog_speed"`
-	CurrentLoad        float64        `json:"current_load"`
-	CurrentLoadPercent float64        `json:"current_load_percent"`
+	ToolNumber     int64  `json:"tool_number"`
+	FrameNumber    int64  `json:"frame_number"`
+	// axes data
+	JogOverride        int16          `json:"jog_override"`
+	FeedOverride       int16          `json:"feed_override"`
+	Feedrate           int64          `json:"feedrate"`
+	JogSpeed           int64          `json:"jog_speed"`
+	CurrentLoad        float32        `json:"current_load"`
+	CurrentLoadPercent float32        `json:"current_load_percent"`
 	ServoLoads         map[string]int `json:"servo_loads"`
-
-	AxesErrors    []int16  `json:"axes_errors"`
-	AxesErrorsStr []string `json:"axes_errors_str"`
-}
-
-type SpindleData struct {
-	SpindleSpeed      int            `json:"spindle_speed"`
-	SpindleSpeedParam int            `json:"spindle_param_speed"`
+	// spindle data
+	SpindleOverride   int16          `json:"spindle_override"`
+	SpindleSpeed      int64          `json:"spindle_speed"`
+	SpindleParamSpeed int64          `json:"spindle_param_speed"`
 	SpindleMotorSpeed map[string]int `json:"spindle_motor_speed"`
 	SpindleLoad       map[string]int `json:"spindle_load"`
-	SpindleOverride   int16          `json:"spindle_override"`
-
-	SpindleErrors    []int16  `json:"spindle_errors"`
-	SpindleErrorsStr []string `json:"spindle_errors_str"`
-}
-
-type AlarmData struct {
+	// alarm data
 	Emergency   int16 `json:"emergency"`
 	AlarmStatus int16 `json:"alarm_status"`
-
-	EmergencyStr   string `json:"emergency_str"`
-	AlarmStatusStr string `json:"alarm_status_str"`
-
-	AlarmErrors    []int16  `json:"alarm_errors"`
-	AlarmErrorsStr []string `json:"alarm_errors_str"`
+	// error data
+	Errors    []int16  `json:"errors"`
+	ErrorsStr []string `json:"errors_str"`
 }
 
-type CollectorData struct {
-	Device  Device      `json:"device"`
-	Mode    ModeData    `json:"mode_data"`
-	Program ProgramData `json:"program_data"`
-	Axes    AxesData    `json:"axes_data"`
-	Spindle SpindleData `json:"spindle_data"`
-	Alarm   AlarmData   `json:"alarm_data"`
-}
-
-type CollectorsData struct {
-	Collectors []CollectorData `json:"collectors"`
-}
-
-type TableRow struct {
-	Name  string
-	Value float64
-}
-
-var collectors_data CollectorsData
 var config Config
 var plugin_dir string
 
+var log_buf bytes.Buffer
+var logger *log.Logger
+
 func main() {
+	multi_writer := io.MultiWriter(os.Stdout, &log_buf)
+	logger = log.New(multi_writer, "Plugin: ", log.Ldate|log.Ltime|log.Lshortfile)
+	defer func() {
+		shutdown_path := filepath.Join(plugin_dir, "plugin.log")
+		if err := os.WriteFile(shutdown_path, log_buf.Bytes(), 0644); err != nil {
+			log.Println("Ошибка записи файла shutdown.log:", err)
+		}
+	}()
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Println("Panic:", r)
+			trace := debug.Stack()
+			logger.Println(string(trace))
+			crash_path := filepath.Join(plugin_dir, "crash.log")
+			if err := os.WriteFile(crash_path, log_buf.Bytes(), 0644); err != nil {
+				log.Println("Ошибка записи файла crash.log:", err)
+			}
+			os.Exit(1)
+		}
+	}()
+
 	plugin_path, err := os.Executable()
 	if err != nil {
-		fmt.Println("Ошибка при определении пути исполняемого файла:", err)
-		return
+		logger.Println("Ошибка при определении пути исполняемого файла:", err)
+		panic(err)
 	}
 
 	plugin_dir = filepath.Dir(plugin_path)
 	data_path := filepath.Join(plugin_dir, "plugin.conf")
 	fileContent, err := os.ReadFile(data_path)
 	if err != nil {
-		log.Fatalf("Ошибка чтения файла: %v", err)
+		logger.Println("Ошибка чтения файла:", err)
+		panic(err)
 	}
 
 	err = yaml.Unmarshal(fileContent, &config)
 	if err != nil {
-		log.Fatalf("Ошибка парсинга YAML: %v", err)
+		logger.Println("Ошибка чтения plugin.conf (yaml):", err)
+		panic(err)
 	}
 
 	for index := range config.Devices {
@@ -162,46 +151,71 @@ func main() {
 	}
 
 	if config.Server.Status {
-		device_count := len(config.Devices)
-		collectors_data.Collectors = make([]CollectorData, device_count)
-		for index := range collectors_data.Collectors {
-			collectors_data.Collectors[index].Device.Name = config.Devices[index].Name
-		}
 		inicialize()
 		go start()
 	}
 
-	collector_path := config.CollectorPath
-	if collector_path == "" {
-		collector_path = filepath.Join(plugin_dir, "collector", "collector.exe")
+	json_devices, err := json.Marshal(config.Devices)
+	if err != nil {
+		logger.Println("Ошибка формирования списка устройств (Json):", err)
+		panic(err)
 	}
 
-	for {
-		json_data, err := json.Marshal(config.Devices)
-		if err != nil {
-			fmt.Println("Ошибка чтения JSON:", err)
-			return
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	collector_path := filepath.Join(plugin_dir, "collector", "collector.exe")
+	cmd := exec.CommandContext(ctx, collector_path, string(json_devices))
+	AddProcessToGroup(cmd)
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		logger.Println("Ошибка получения StdoutPipe:", err)
+		panic(err)
+	}
+	if err := cmd.Start(); err != nil {
+		logger.Println("Ошибка запуска сборщика:", err)
+		panic(err)
+	}
+
+	// закрытие дочернего процесса
+	if runtime.GOOS == "windows" {
+		AddWinJobObject(cmd)
+	}
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc, syscall.SIGHUP, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		s := <-sigc
+		fmt.Println("try close sub programs")
+		ShutdownChildProcess(cmd, cancel, s)
+	}()
+
+	var lastReceivedTime time.Time
+	scanner := bufio.NewScanner(stdoutPipe)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if len(line) == 0 {
+			continue
 		}
 
-		cmd := exec.Command(collector_path, string(json_data))
+		go func() {
+			var data FanucData
+			err := json.Unmarshal([]byte(line), &data)
+			if err == nil && config.Server.Status {
+				UpdateCollector(data)
+			}
+			fmt.Fprintln(os.Stdout, line)
+		}()
 
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			fmt.Printf("Ошибка сборщика: %s\n", err.Error())
-			panic(err)
+		currentTime := time.Now()
+		if !lastReceivedTime.IsZero() {
+			interval := currentTime.Sub(lastReceivedTime)
+			logger.Printf("Интервал между сообщениями: %s\n", interval)
+		} else {
+			logger.Println("Первый пакет получен")
 		}
-
-		dec_err := json.Unmarshal([]byte(output), &collectors_data)
-		if dec_err != nil {
-			fmt.Println("Ошибка декодирования JSON:", dec_err)
-			return
-		}
-
-		if config.Server.Status {
-			UpdateDeviceNodes(collectors_data.Collectors)
-		}
-
-		fmt.Fprintln(os.Stdout, string(output))
-		time.Sleep(time.Second * time.Duration(config.Interval))
+		lastReceivedTime = currentTime
+	}
+	if err := scanner.Err(); err != nil {
+		logger.Println("Ошибка чтения данных сборщика:", err)
 	}
 }

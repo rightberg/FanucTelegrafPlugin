@@ -16,7 +16,6 @@ import (
 	"runtime/debug"
 	"strconv"
 	"syscall"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -46,6 +45,7 @@ type Device struct {
 }
 
 type Config struct {
+	Logfile  bool     `json:"logfile" yaml:"logfile"`
 	Interval float32  `json:"interval" yaml:"interval"`
 	Server   Server   `json:"server" yaml:"server"`
 	Devices  []Device `json:"devices" yaml:"devices"`
@@ -104,20 +104,15 @@ var logger *log.Logger
 func main() {
 	multi_writer := io.MultiWriter(os.Stdout, &log_buf)
 	logger = log.New(multi_writer, "Plugin: ", log.Ldate|log.Ltime|log.Lshortfile)
+	logger.Println("Запуск плагина")
 	defer func() {
-		shutdown_path := filepath.Join(plugin_dir, "plugin.log")
-		if err := os.WriteFile(shutdown_path, log_buf.Bytes(), 0644); err != nil {
-			log.Println("Ошибка записи файла shutdown.log:", err)
-		}
-	}()
-	defer func() {
-		if r := recover(); r != nil {
+		if r := recover(); r != nil && log_buf.Len() > 0 {
 			logger.Println("Panic:", r)
 			trace := debug.Stack()
 			logger.Println(string(trace))
 			crash_path := filepath.Join(plugin_dir, "crash.log")
 			if err := os.WriteFile(crash_path, log_buf.Bytes(), 0644); err != nil {
-				log.Println("Ошибка записи файла crash.log:", err)
+				logger.Println("Ошибка записи файла crash.log:", err)
 			}
 			os.Exit(1)
 		}
@@ -128,8 +123,8 @@ func main() {
 		logger.Println("Ошибка при определении пути исполняемого файла:", err)
 		panic(err)
 	}
-
 	plugin_dir = filepath.Dir(plugin_path)
+
 	data_path := filepath.Join(plugin_dir, "plugin.conf")
 	fileContent, err := os.ReadFile(data_path)
 	if err != nil {
@@ -141,6 +136,32 @@ func main() {
 	if err != nil {
 		logger.Println("Ошибка чтения plugin.conf (yaml):", err)
 		panic(err)
+	}
+
+	if config.Logfile {
+		log_path := filepath.Join(plugin_dir, "plugin.log")
+		log_file, err := os.OpenFile(log_path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			logger.Println("Ошибка открытия файла логов:", err)
+			panic(err)
+		}
+		defer func() {
+			logger.Println("Завершение плагина")
+			if r := recover(); r != nil && log_buf.Len() == 0 {
+				logger.Println("Panic:", r)
+				trace := debug.Stack()
+				logger.Println(string(trace))
+				log_file.Close()
+				os.Exit(1)
+			}
+			log_file.Close()
+		}()
+		multiWriter := io.MultiWriter(os.Stdout, log_file)
+		logger = log.New(multiWriter, "Plugin: ", log.Ldate|log.Ltime|log.Lshortfile)
+		if log_buf.Len() > 0 {
+			logger.Println(log_buf.String())
+		}
+		log_buf.Reset()
 	}
 
 	for index := range config.Devices {
@@ -177,7 +198,6 @@ func main() {
 		panic(err)
 	}
 
-	// закрытие дочернего процесса
 	if runtime.GOOS == "windows" {
 		AddWinJobObject(cmd)
 	}
@@ -185,11 +205,10 @@ func main() {
 	signal.Notify(sigc, syscall.SIGHUP, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		s := <-sigc
-		fmt.Println("try close sub programs")
+		logger.Println("Попытка закрыть дочерние программы")
 		ShutdownChildProcess(cmd, cancel, s)
 	}()
 
-	var lastReceivedTime time.Time
 	scanner := bufio.NewScanner(stdoutPipe)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -205,15 +224,6 @@ func main() {
 			}
 			fmt.Fprintln(os.Stdout, line)
 		}()
-
-		currentTime := time.Now()
-		if !lastReceivedTime.IsZero() {
-			interval := currentTime.Sub(lastReceivedTime)
-			logger.Printf("Интервал между сообщениями: %s\n", interval)
-		} else {
-			logger.Println("Первый пакет получен")
-		}
-		lastReceivedTime = currentTime
 	}
 	if err := scanner.Err(); err != nil {
 		logger.Println("Ошибка чтения данных сборщика:", err)

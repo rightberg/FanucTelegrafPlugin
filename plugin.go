@@ -90,6 +90,11 @@ type FanucData struct {
 	// alarm data
 	Emergency   int16 `json:"emergency"`
 	AlarmStatus int16 `json:"alarm_status"`
+	//other data
+	PowerOnTime   int64 `json:"power_on_time"`
+	OperatingTime int64 `json:"operating_time"`
+	CuttingTime   int64 `json:"cutting_time"`
+	CycleTime     int64 `json:"cycle_time"`
 	// error data
 	Errors    []int16  `json:"errors"`
 	ErrorsStr []string `json:"errors_str"`

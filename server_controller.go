@@ -161,6 +161,10 @@ func GetDeviceNodes(device_name string) []*server.Node {
 		"/alarm_status_str",
 		"/errors",
 		"/errors_str",
+		"/power_on_time",
+		"/operating_time",
+		"/cutting_time",
+		"/cycle_time",
 	}
 	node_ns := GetNodeNamespace(_server, fanuc_ns)
 	if node_ns != nil {
@@ -225,6 +229,11 @@ func UpdateCollector(collector FanucData) {
 	// Alarm data
 	UpdateNodeValueAtAddress(node_ns, device_address+"/emergency", int16(collector.Emergency))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_status", int16(collector.AlarmStatus))
+	// Other data
+	UpdateNodeValueAtAddress(node_ns, device_address+"/power_on_time", int64(collector.PowerOnTime))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/operating_time", int64(collector.OperatingTime))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/cutting_time", int64(collector.CuttingTime))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/cycle_time", int64(collector.CycleTime))
 	// errors data
 	UpdateNodeValueAtAddress(node_ns, device_address+"/errors", []int16(collector.Errors))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/errors_str", []string(collector.ErrorsStr))
@@ -273,11 +282,16 @@ func CreateDeviceNodes(devices []Device, node_ns *server.NodeNameSpace) {
 		SetValueRank(AddVariableNode(node_ns, device_folder, "spindle_load", []int64{}), 1)
 		SetValueRank(AddVariableNode(node_ns, device_folder, "spindle_load_names", []string{}), 1)
 		SetValueRank(AddVariableNode(node_ns, device_folder, "spindle_motor_names", []string{}), 1)
-		// alarm data
+		//alarm data
 		AddVariableNode(node_ns, device_folder, "emergency", int16(0))
 		AddVariableNode(node_ns, device_folder, "alarm_status", int16(0))
 		AddVariableNode(node_ns, device_folder, "emergency_str", "")
 		AddVariableNode(node_ns, device_folder, "alarm_status_str", "")
+		//other data
+		AddVariableNode(node_ns, device_folder, "power_on_time", int64(0))
+		AddVariableNode(node_ns, device_folder, "operating_time", int64(0))
+		AddVariableNode(node_ns, device_folder, "cutting_time", int64(0))
+		AddVariableNode(node_ns, device_folder, "cycle_time", int64(0))
 		//errors data
 		SetValueRank(AddVariableNode(node_ns, device_folder, "errors", make([]int16, 28)), 1)
 		SetValueRank(AddVariableNode(node_ns, device_folder, "errors_str", make([]string, 28)), 1)

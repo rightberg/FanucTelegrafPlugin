@@ -2,70 +2,84 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
-	"unsafe"
-
-	"golang.org/x/sys/windows"
+	"time"
 )
 
-var job_handle windows.Handle
-
-func AssignWinJobObject(cmd *exec.Cmd) (windows.Handle, error) {
-	job, err := windows.CreateJobObject(nil, nil)
+func createFileInCurrentDir(filename string) error {
+	executablePath, err := os.Executable()
 	if err != nil {
-		return 0, err
+		return fmt.Errorf("не удалось получить путь к исполняемому файлу: %w", err)
 	}
-
-	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-	infoSize := uint32(unsafe.Sizeof(info))
-
-	_, err = windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), infoSize)
+	dir := filepath.Dir(executablePath)
+	filePath := filepath.Join(dir, filename)
+	file, err := os.Create(filePath)
 	if err != nil {
-		windows.CloseHandle(job)
-		return 0, err
+		return fmt.Errorf("не удалось создать файл: %w", err)
 	}
-
-	procHandle, err := windows.OpenProcess(windows.PROCESS_ALL_ACCESS, false, uint32(cmd.Process.Pid))
-	if err != nil {
-		windows.CloseHandle(job)
-		return 0, err
-	}
-	defer windows.CloseHandle(procHandle)
-
-	err = windows.AssignProcessToJobObject(job, procHandle)
-	if err != nil {
-		windows.CloseHandle(job)
-		return 0, err
-	}
-
-	return job, nil
+	defer file.Close()
+	fmt.Printf("Файл успешно создан: %s\n", filePath)
+	return nil
 }
 
-func AddWinJobObject(cmd *exec.Cmd) {
-	job, err := AssignWinJobObject(cmd)
-	if err != nil {
-		logger.Println("Не удалось добавить процесс в Job Object:", err)
+func SendCtrlBreak(groupID uint32) error {
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	proc := kernel32.NewProc("GenerateConsoleCtrlEvent")
+	ret, _, err := proc.Call(
+		uintptr(syscall.CTRL_BREAK_EVENT),
+		uintptr(groupID),
+	)
+	if ret == 0 {
+		return err
+	}
+	return nil
+}
+
+func ShutdownChildProcess(cmd *exec.Cmd, cancel context.CancelFunc) {
+	log.Println("Попытка корректно завершить дочерний процесс")
+	if cmd.Process == nil {
+		log.Println("Процесс не запущен")
+		cancel()
 		return
 	}
-	job_handle = job
-}
 
-func ShutdownChildProcess(cmd *exec.Cmd, cancel context.CancelFunc, s os.Signal) {
-	logger.Printf("Получен сигнал: %s, завершаемся", s)
-	cancel()
-	if cmd.Process != nil {
-		if err := cmd.Process.Kill(); err != nil {
-			logger.Println("Не удалось завершить дочерний процесс:", err)
+	pid := uint32(cmd.Process.Pid)
+	err := SendCtrlBreak(pid)
+	if err != nil {
+		log.Println("Ошибка отправки CTRL_BREAK_EVENT:", err)
+
+	} else {
+		log.Println("CTRL_BREAK_EVENT отправлен")
+	}
+
+	done := make(chan error)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			log.Println("Дочерний процесс завершился с ошибкой:", err)
+			createFileInCurrentDir("A GOOD ")
+		} else {
+			log.Println("Дочерний процесс успешно завершился")
+			createFileInCurrentDir("A BD ")
 		}
+	case <-time.After(5 * time.Second):
+		log.Println("Таймаут ожидания завершения дочернего процесса — принудительное убийство")
+		if kill_err := cmd.Process.Kill(); kill_err != nil {
+			log.Println("Ошибка принудительного убийства процесса:", kill_err)
+		}
+		<-done
 	}
-	cmd.Wait()
-	if job_handle != 0 {
-		windows.CloseHandle(job_handle)
-	}
-	os.Exit(0)
+
+	cancel()
 }
 
 func AddProcessToGroup(cmd *exec.Cmd) {

@@ -111,6 +111,13 @@ func MapValues(data map[string]int) []int64 {
 	return values
 }
 
+func GetMapValue(m map[string]int, key string) int {
+	if value, exists := m[key]; exists {
+		return value
+	}
+	return 0
+}
+
 func GetDeviceNodes(device_name string) []*server.Node {
 	var result []*server.Node
 	addresses := []string{
@@ -118,22 +125,14 @@ func GetDeviceNodes(device_name string) []*server.Node {
 		"/address",
 		"/port",
 		"/series",
-		"/mode",
-		"/run_state",
-		"/status",
+		"/aut",
+		"/run",
+		"/edit",
 		"/shutdowns",
 		"/hight_speed",
-		"/axis_motion",
+		"/motion",
 		"/mstb",
 		"/load_excess",
-		"/mode_str",
-		"/run_state_str",
-		"/status_str",
-		"/shutdowns_str",
-		"/hight_speed_str",
-		"/axis_motion_str",
-		"/mstb_str",
-		"/load_excess_str",
 		"/frame",
 		"/main_prog_number",
 		"/sub_prog_number",
@@ -146,25 +145,30 @@ func GetDeviceNodes(device_name string) []*server.Node {
 		"/jog_speed",
 		"/current_load",
 		"/current_load_percent",
-		"/axes_names",
-		"/servo_loads",
+		"/servo_load_x",
+		"/servo_load_z",
+		"/absolute_position_x",
+		"/absolute_position_z",
+		"/machine_position_x",
+		"/machine_position_z",
+		"/relative_position_x",
+		"/relative_position_z",
 		"/spindle_speed",
 		"/spindle_param_speed",
 		"/spindle_override",
-		"/spindle_motor_names",
 		"/spindle_load_names",
-		"/spindle_motor_speed",
+		"/spindle_motor_speed_s",
 		"/spindle_load",
 		"/emergency",
-		"/alarm_status",
-		"/emergency_str",
-		"/alarm_status_str",
+		"/alarm",
 		"/errors",
 		"/errors_str",
 		"/power_on_time",
-		"/operating_time",
+		"/operation_time",
 		"/cutting_time",
 		"/cycle_time",
+		"/series_number",
+		"/version_number",
 	}
 	node_ns := GetNodeNamespace(_server, fanuc_ns)
 	if node_ns != nil {
@@ -182,10 +186,12 @@ func GetDeviceNodes(device_name string) []*server.Node {
 func UpdateCollector(collector FanucData) {
 	node_ns := GetNodeNamespace(_server, fanuc_ns)
 	if node_ns == nil {
+		logger.Println("UPD некорректный node_ns")
 		return
 	}
 	device_address, exists := device_map[collector.Name]
 	if !exists {
+		logger.Println("UPD устройство отсутсвует")
 		return
 	}
 	// Device data
@@ -194,12 +200,12 @@ func UpdateCollector(collector FanucData) {
 	UpdateNodeValueAtAddress(node_ns, device_address+"/port", int64(collector.Port))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/series", string(collector.Series))
 	// Mode data
-	UpdateNodeValueAtAddress(node_ns, device_address+"/mode", int16(collector.Mode))
-	UpdateNodeValueAtAddress(node_ns, device_address+"/run_state", int16(collector.RunState))
-	UpdateNodeValueAtAddress(node_ns, device_address+"/status", int16(collector.Status))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/aut", int16(collector.Aut))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/run", int16(collector.Run))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/edit", int16(collector.Edit))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/shutdowns", int16(collector.Shutdowns))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/hight_speed", int16(collector.HightSpeed))
-	UpdateNodeValueAtAddress(node_ns, device_address+"/axis_motion", int16(collector.AxisMotion))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/motion", int16(collector.Motion))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/mstb", int16(collector.Mstb))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/load_excess", int64(collector.LoadExcess))
 	// Program data
@@ -216,24 +222,31 @@ func UpdateCollector(collector FanucData) {
 	UpdateNodeValueAtAddress(node_ns, device_address+"/jog_speed", int64(collector.JogSpeed))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/current_load", float64(collector.CurrentLoad))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/current_load_percent", float64(collector.CurrentLoadPercent))
-	UpdateNodeValueAtAddress(node_ns, device_address+"/axes_names", MapKeys(collector.ServoLoads))
-	UpdateNodeValueAtAddress(node_ns, device_address+"/servo_loads", MapValues(collector.ServoLoads))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/servo_load_x", int64(GetMapValue(collector.ServoLoads, "X")))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/servo_load_z", int64(GetMapValue(collector.ServoLoads, "Z")))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/absolute_position_x", int64(GetMapValue(collector.AbsolutePositions, "X")))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/absolute_position_z", int64(GetMapValue(collector.AbsolutePositions, "Z")))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/machine_position_x", int64(GetMapValue(collector.MachinePositions, "X")))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/machine_position_z", int64(GetMapValue(collector.MachinePositions, "Z")))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/relative_position_x", int64(GetMapValue(collector.RelativePositions, "X")))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/relative_position_z", int64(GetMapValue(collector.RelativePositions, "Z")))
 	// Spindle data
 	UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_speed", int64(collector.SpindleSpeed))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_param_speed", int64(collector.SpindleParamSpeed))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_override", int16(collector.SpindleOverride))
-	UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_motor_names", MapKeys(collector.SpindleMotorSpeed))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_motor_speed_s", int64(GetMapValue(collector.SpindleMotorSpeed, "S")))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_load_names", MapKeys(collector.SpindleLoad))
-	UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_motor_speed", MapValues(collector.SpindleMotorSpeed))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/spindle_load", MapValues(collector.SpindleLoad))
 	// Alarm data
 	UpdateNodeValueAtAddress(node_ns, device_address+"/emergency", int16(collector.Emergency))
-	UpdateNodeValueAtAddress(node_ns, device_address+"/alarm_status", int16(collector.AlarmStatus))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/alarm", int16(collector.Alarm))
 	// Other data
 	UpdateNodeValueAtAddress(node_ns, device_address+"/power_on_time", int64(collector.PowerOnTime))
-	UpdateNodeValueAtAddress(node_ns, device_address+"/operating_time", int64(collector.OperatingTime))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/operation_time", int64(collector.OperationTime))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/cutting_time", int64(collector.CuttingTime))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/cycle_time", int64(collector.CycleTime))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/series_number", string(collector.SeriesNumber))
+	UpdateNodeValueAtAddress(node_ns, device_address+"/version_number", string(collector.VersionNumber))
 	// errors data
 	UpdateNodeValueAtAddress(node_ns, device_address+"/errors", []int16(collector.Errors))
 	UpdateNodeValueAtAddress(node_ns, device_address+"/errors_str", []string(collector.ErrorsStr))
@@ -250,12 +263,12 @@ func CreateDeviceNodes(devices []Device, node_ns *server.NodeNameSpace) {
 		AddVariableNode(node_ns, device_folder, "address", "")
 		AddVariableNode(node_ns, device_folder, "series", "")
 		//mode data
-		AddVariableNode(node_ns, device_folder, "mode", int16(0))
-		AddVariableNode(node_ns, device_folder, "run_state", int16(0))
-		AddVariableNode(node_ns, device_folder, "status", int16(0))
+		AddVariableNode(node_ns, device_folder, "aut", int16(0))
+		AddVariableNode(node_ns, device_folder, "run", int16(0))
+		AddVariableNode(node_ns, device_folder, "edit", int16(0))
 		AddVariableNode(node_ns, device_folder, "shutdowns", int16(0))
 		AddVariableNode(node_ns, device_folder, "hight_speed", int16(0))
-		AddVariableNode(node_ns, device_folder, "axis_motion", int16(0))
+		AddVariableNode(node_ns, device_folder, "motion", int16(0))
 		AddVariableNode(node_ns, device_folder, "mstb", int16(0))
 		AddVariableNode(node_ns, device_folder, "load_excess", int64(0))
 		//program data
@@ -272,26 +285,31 @@ func CreateDeviceNodes(devices []Device, node_ns *server.NodeNameSpace) {
 		AddVariableNode(node_ns, device_folder, "jog_speed", int64(0))
 		AddVariableNode(node_ns, device_folder, "current_load", float64(0))
 		AddVariableNode(node_ns, device_folder, "current_load_percent", float64(0))
-		SetValueRank(AddVariableNode(node_ns, device_folder, "axes_names", []string{}), 1)
-		SetValueRank(AddVariableNode(node_ns, device_folder, "servo_loads", []int64{}), 1)
+		AddVariableNode(node_ns, device_folder, "servo_load_x", int64(0))
+		AddVariableNode(node_ns, device_folder, "servo_load_z", int64(0))
+		AddVariableNode(node_ns, device_folder, "absolute_position_x", int64(0))
+		AddVariableNode(node_ns, device_folder, "absolute_position_z", int64(0))
+		AddVariableNode(node_ns, device_folder, "machine_position_x", int64(0))
+		AddVariableNode(node_ns, device_folder, "machine_position_z", int64(0))
+		AddVariableNode(node_ns, device_folder, "relative_position_x", int64(0))
+		AddVariableNode(node_ns, device_folder, "relative_position_z", int64(0))
 		//spindle data
 		AddVariableNode(node_ns, device_folder, "spindle_speed", int64(0))
 		AddVariableNode(node_ns, device_folder, "spindle_param_speed", int64(0))
 		AddVariableNode(node_ns, device_folder, "spindle_override", int64(0))
-		SetValueRank(AddVariableNode(node_ns, device_folder, "spindle_motor_speed", []int64{}), 1)
+		AddVariableNode(node_ns, device_folder, "spindle_motor_speed_s", int64(0))
 		SetValueRank(AddVariableNode(node_ns, device_folder, "spindle_load", []int64{}), 1)
 		SetValueRank(AddVariableNode(node_ns, device_folder, "spindle_load_names", []string{}), 1)
-		SetValueRank(AddVariableNode(node_ns, device_folder, "spindle_motor_names", []string{}), 1)
 		//alarm data
 		AddVariableNode(node_ns, device_folder, "emergency", int16(0))
-		AddVariableNode(node_ns, device_folder, "alarm_status", int16(0))
-		AddVariableNode(node_ns, device_folder, "emergency_str", "")
-		AddVariableNode(node_ns, device_folder, "alarm_status_str", "")
+		AddVariableNode(node_ns, device_folder, "alarm", int16(0))
 		//other data
 		AddVariableNode(node_ns, device_folder, "power_on_time", int64(0))
-		AddVariableNode(node_ns, device_folder, "operating_time", int64(0))
+		AddVariableNode(node_ns, device_folder, "operation_time", int64(0))
 		AddVariableNode(node_ns, device_folder, "cutting_time", int64(0))
 		AddVariableNode(node_ns, device_folder, "cycle_time", int64(0))
+		AddVariableNode(node_ns, device_folder, "series_number", "")
+		AddVariableNode(node_ns, device_folder, "version_number", "")
 		//errors data
 		SetValueRank(AddVariableNode(node_ns, device_folder, "errors", make([]int16, 28)), 1)
 		SetValueRank(AddVariableNode(node_ns, device_folder, "errors_str", make([]string, 28)), 1)

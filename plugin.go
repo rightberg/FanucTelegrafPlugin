@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"syscall"
@@ -45,10 +44,9 @@ type Device struct {
 }
 
 type Config struct {
-	Logfile  bool     `json:"logfile" yaml:"logfile"`
-	Interval float32  `json:"interval" yaml:"interval"`
-	Server   Server   `json:"server" yaml:"server"`
-	Devices  []Device `json:"devices" yaml:"devices"`
+	Logfile bool     `json:"logfile" yaml:"logfile"`
+	Server  Server   `json:"server" yaml:"server"`
+	Devices []Device `json:"devices" yaml:"devices"`
 }
 
 type FanucData struct {
@@ -58,12 +56,12 @@ type FanucData struct {
 	Series  string `json:"series"`
 	Port    int    `json:"port"`
 	// mode data
-	Mode       int16 `json:"mode"`
-	RunState   int16 `json:"run_state"`
-	Status     int16 `json:"status"`
+	Aut        int16 `json:"aut"`
+	Run        int16 `json:"run"`
+	Edit       int16 `json:"edit"`
 	Shutdowns  int16 `json:"shutdowns"`
 	HightSpeed int16 `json:"hight_speed"`
-	AxisMotion int16 `json:"axis_motion"`
+	Motion     int16 `json:"motion"`
 	Mstb       int16 `json:"mstb"`
 	LoadExcess int64 `json:"load_excess"`
 	// program data
@@ -78,9 +76,12 @@ type FanucData struct {
 	FeedOverride       int16          `json:"feed_override"`
 	Feedrate           int64          `json:"feedrate"`
 	JogSpeed           int64          `json:"jog_speed"`
-	CurrentLoad        float32        `json:"current_load"`
-	CurrentLoadPercent float32        `json:"current_load_percent"`
+	CurrentLoad        float64        `json:"current_load"`
+	CurrentLoadPercent float64        `json:"current_load_percent"`
 	ServoLoads         map[string]int `json:"servo_loads"`
+	AbsolutePositions  map[string]int `json:"absolute_positions"`
+	MachinePositions   map[string]int `json:"machine_positions"`
+	RelativePositions  map[string]int `json:"relative_positions"`
 	// spindle data
 	SpindleOverride   int16          `json:"spindle_override"`
 	SpindleSpeed      int64          `json:"spindle_speed"`
@@ -88,13 +89,15 @@ type FanucData struct {
 	SpindleMotorSpeed map[string]int `json:"spindle_motor_speed"`
 	SpindleLoad       map[string]int `json:"spindle_load"`
 	// alarm data
-	Emergency   int16 `json:"emergency"`
-	AlarmStatus int16 `json:"alarm_status"`
+	Emergency int16 `json:"emergency"`
+	Alarm     int16 `json:"alarm"`
 	//other data
-	PowerOnTime   int64 `json:"power_on_time"`
-	OperatingTime int64 `json:"operating_time"`
-	CuttingTime   int64 `json:"cutting_time"`
-	CycleTime     int64 `json:"cycle_time"`
+	PowerOnTime   int64  `json:"power_on_time"`
+	OperationTime int64  `json:"operation_time"`
+	CuttingTime   int64  `json:"cutting_time"`
+	CycleTime     int64  `json:"cycle_time"`
+	SeriesNumber  string `json:"series_number"`
+	VersionNumber string `json:"version_number"`
 	// error data
 	Errors    []int16  `json:"errors"`
 	ErrorsStr []string `json:"errors_str"`
@@ -115,11 +118,15 @@ func main() {
 			logger.Println("Panic:", r)
 			trace := debug.Stack()
 			logger.Println(string(trace))
-			crash_path := filepath.Join(plugin_dir, "crash.log")
-			if err := os.WriteFile(crash_path, log_buf.Bytes(), 0644); err != nil {
-				logger.Println("Ошибка записи файла crash.log:", err)
+			plugin_path, err := os.Executable()
+			if err == nil {
+				dir := filepath.Dir(plugin_path)
+				crash_path := filepath.Join(dir, "crash.log")
+				if err := os.WriteFile(crash_path, log_buf.Bytes(), 0644); err != nil {
+					logger.Println("Ошибка записи файла crash.log:", err)
+				}
+				os.Exit(1)
 			}
-			os.Exit(1)
 		}
 	}()
 
@@ -190,10 +197,11 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	collector_path := filepath.Join(plugin_dir, "collector", "collector.exe")
-	cmd := exec.CommandContext(ctx, collector_path, string(json_devices))
+	pid := os.Getpid()
+	cmd := exec.CommandContext(ctx, collector_path, string(json_devices), fmt.Sprintf("%d", pid))
 	AddProcessToGroup(cmd)
 
-	stdoutPipe, err := cmd.StdoutPipe()
+	stdout_pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		logger.Println("Ошибка получения StdoutPipe:", err)
 		panic(err)
@@ -203,18 +211,16 @@ func main() {
 		panic(err)
 	}
 
-	if runtime.GOOS == "windows" {
-		AddWinJobObject(cmd)
-	}
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGHUP, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		s := <-sigc
-		logger.Println("Попытка закрыть дочерние программы")
-		ShutdownChildProcess(cmd, cancel, s)
+		logger.Println("Попытка закрыть дочерние программы", s)
+		ShutdownChildProcess(cmd, cancel)
+		os.Exit(0)
 	}()
 
-	scanner := bufio.NewScanner(stdoutPipe)
+	scanner := bufio.NewScanner(stdout_pipe)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if len(line) == 0 {
@@ -226,6 +232,10 @@ func main() {
 			err := json.Unmarshal([]byte(line), &data)
 			if err == nil && config.Server.Status {
 				UpdateCollector(data)
+			}
+			if err != nil {
+				logger.Println("Unmarshal error fanuc data", err)
+				logger.Println(string(line))
 			}
 			fmt.Fprintln(os.Stdout, line)
 		}()

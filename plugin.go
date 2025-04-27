@@ -3,18 +3,15 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
-	"syscall"
 
 	"gopkg.in/yaml.v3"
 )
@@ -194,11 +191,9 @@ func main() {
 		panic(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	collector_path := filepath.Join(plugin_dir, "collector", "collector.exe")
+	collector_path := filepath.Join(plugin_dir, "collector.exe")
 	pid := os.Getpid()
-	cmd := exec.CommandContext(ctx, collector_path, string(json_devices), fmt.Sprintf("%d", pid))
+	cmd := exec.Command(collector_path, string(json_devices), fmt.Sprintf("%d", pid))
 	AddProcessToGroup(cmd)
 
 	stdout_pipe, err := cmd.StdoutPipe()
@@ -211,15 +206,6 @@ func main() {
 		panic(err)
 	}
 
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc, syscall.SIGHUP, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
-	go func() {
-		s := <-sigc
-		logger.Println("Попытка закрыть дочерние программы", s)
-		ShutdownChildProcess(cmd, cancel)
-		os.Exit(0)
-	}()
-
 	scanner := bufio.NewScanner(stdout_pipe)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -227,20 +213,24 @@ func main() {
 			continue
 		}
 
-		go func() {
-			var data FanucData
-			err := json.Unmarshal([]byte(line), &data)
-			if err == nil && config.Server.Status {
-				UpdateCollector(data)
-			}
-			if err != nil {
-				logger.Println("Unmarshal error fanuc data", err)
-				logger.Println(string(line))
-			}
-			fmt.Fprintln(os.Stdout, line)
-		}()
+		var data FanucData
+		err := json.Unmarshal([]byte(line), &data)
+		if err == nil && config.Server.Status {
+			UpdateCollector(data)
+		}
+		if err != nil {
+			logger.Println("Unmarshal error fanuc data", err)
+			logger.Println(string(line))
+		}
+		fmt.Fprintln(os.Stdout, line)
 	}
 	if err := scanner.Err(); err != nil {
 		logger.Println("Ошибка чтения данных сборщика:", err)
+	}
+	logger.Println("Завершение collector.exe")
+	if err := cmd.Wait(); err != nil {
+		logger.Println("collector завершился с ошибкой:", err)
+	} else {
+		logger.Println("collector завершился корректно")
 	}
 }

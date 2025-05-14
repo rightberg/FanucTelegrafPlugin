@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/gopcua/opcua/id"
@@ -14,15 +17,6 @@ import (
 	"github.com/gopcua/opcua/server/attrs"
 	"github.com/gopcua/opcua/ua"
 )
-
-func StrContais(str string, slice []string) bool {
-	for _, value := range slice {
-		if value == str {
-			return true
-		}
-	}
-	return false
-}
 
 func GetNodeNamespace(s *server.Server, ns_id int) *server.NodeNameSpace {
 
@@ -62,13 +56,12 @@ func AddVariableNode(node_ns *server.NodeNameSpace, node *server.Node, name stri
 		vf,
 	)
 	variable.SetAttribute(ua.AttributeIDValue, server.DataValueFromValue(value))
+	if value != nil && reflect.TypeOf(value).Kind() == reflect.Slice {
+		variable.SetAttribute(ua.AttributeIDValueRank, server.DataValueFromValue(int32(1)))
+	}
 	node_ns.AddNode(variable)
 	node.AddRef(variable, id.HasComponent, true)
 	return variable
-}
-
-func SetValueRank(node *server.Node, value int32) {
-	node.SetAttribute(ua.AttributeIDValueRank, server.DataValueFromValue(value))
 }
 
 func GetFolderNode(node_ns *server.NodeNameSpace, node *server.Node, name string) *server.Node {
@@ -117,6 +110,109 @@ func UpdateNodeValue(node *server.Node, value any) {
 	}
 }
 
+func GetZeroValueByTagType(tag_type string) any {
+	switch tag_type {
+	case "bool":
+		return false
+	case "string":
+		return ""
+	case "int16":
+		return int16(0)
+	case "int32":
+		return int32(0)
+	case "int64":
+		return int64(0)
+	case "float64":
+		return float64(0)
+	case "[]int64":
+		return make([]int64, 0)
+	case "[]float64":
+		return make([]float64, 0)
+	default:
+		return nil
+	}
+}
+
+func ConvertValueByType(value any, data_type string) any {
+	switch data_type {
+	case "bool":
+		if data, ok := value.(bool); ok {
+			return data
+		}
+	case "int16":
+		if data, ok := value.(float64); ok {
+			return int16(data)
+		}
+	case "int32":
+		if data, ok := value.(float64); ok {
+			return int32(data)
+		}
+	case "int64":
+		if data, ok := value.(float64); ok {
+			return int64(data)
+		}
+	case "float64":
+		if data, ok := value.(float64); ok {
+			return data
+		}
+	case "string":
+		if data, ok := value.(string); ok {
+			return data
+		}
+	case "[]int64":
+		if raw_slice, ok := value.([]interface{}); ok {
+			var data []int64
+			for _, v := range raw_slice {
+				if num, ok := v.(float64); ok {
+					data = append(data, int64(num))
+				}
+			}
+			return data
+		}
+	case "[]float64":
+		if raw_slice, ok := value.([]interface{}); ok {
+			var data []float64
+			for _, v := range raw_slice {
+				if num, ok := v.(float64); ok {
+					data = append(data, float64(num))
+				}
+			}
+			return data
+		}
+	}
+	return nil
+}
+
+func ConvertMapValueAtKey(key string, map_data any, data_type string) any {
+	if map_data, ok := map_data.(map[string]interface{}); ok {
+		switch data_type {
+		case "int64":
+			for _key, _value := range map_data {
+				if buf_value, ok := _value.(float64); ok {
+					if _key == strings.ToUpper(key) {
+						return int64(buf_value)
+					} else if _key == strings.ToLower(key) {
+						return int64(buf_value)
+					}
+				}
+			}
+			return int64(0)
+		case "float64":
+			for _key, _value := range map_data {
+				if buf_value, ok := _value.(float64); ok {
+					if _key == strings.ToUpper(key) {
+						return buf_value
+					} else if _key == strings.ToLower(key) {
+						return buf_value
+					}
+				}
+			}
+			return float64(0)
+		}
+	}
+	return nil
+}
+
 func UpdateNodeValueAtAddress(node_ns *server.NodeNameSpace, address string, value any) {
 	node_id, _ := ua.ParseNodeID(address)
 	if node_id != nil {
@@ -145,11 +241,11 @@ func GetPoliciesOptions(policies map[string]string, available_policies []string,
 	options := []server.Option{}
 	var loaded_policies []string
 	for policy, mode := range policies {
-		policy_access := StrContais(policy, available_policies)
-		mode_access := StrContais(mode, available_sec_modes)
+		policy_access := slices.Contains(available_policies, policy)
+		mode_access := slices.Contains(available_sec_modes, mode)
 		if policy_access && mode_access {
 			merge := policy + mode
-			if !StrContais(merge, loaded_policies) {
+			if !slices.Contains(loaded_policies, merge) {
 				options = append(options, server.EnableSecurity(policy, GetSecurityMode(policy, mode)))
 				loaded_policies = append(loaded_policies, merge)
 			}
@@ -195,9 +291,9 @@ func GetAuthModeOptions(auth_modes []string, available_auth_modes []string) []se
 	options := []server.Option{}
 	var loaded_auth_modes []string
 	for _, mode := range auth_modes {
-		auth_access := StrContais(mode, available_auth_modes)
+		auth_access := slices.Contains(available_auth_modes, mode)
 		if auth_access {
-			if !StrContais(mode, loaded_auth_modes) {
+			if !slices.Contains(loaded_auth_modes, mode) {
 				options = append(options, server.EnableAuthMode(GetAuthMode(mode)))
 				loaded_auth_modes = append(loaded_auth_modes, mode)
 			}
@@ -222,7 +318,7 @@ func GetEndpointOptions(endpoints []ImportEndpoint) []server.Option {
 		endpoint = imp_endpoint.Endpoint
 		port = imp_endpoint.Port
 		merge = fmt.Sprintf("%s%d", endpoint, port)
-		access := !StrContais(merge, loaded_endpoints)
+		access := !slices.Contains(loaded_endpoints, merge)
 		if access {
 			options = append(options, server.EndPoint(endpoint, port))
 			loaded_endpoints = append(loaded_endpoints, merge)
@@ -249,18 +345,16 @@ func AddCert(cert_path string) server.Option {
 func AddPK(key_path string) server.Option {
 	keyBytes, err := os.ReadFile(key_path)
 	if err != nil {
-		log.Fatalf("Failed to read key file: %v", err)
+		logger.Fatalf("Failed to read key file: %v", err)
 	}
 
-	// Декодирование PEM-блока
 	block, _ := pem.Decode(keyBytes)
 	if block == nil {
-		log.Fatalf("Failed to decode PEM block containing the key")
+		logger.Fatalf("Failed to decode PEM block containing the key")
 	}
 
 	var privateKey *rsa.PrivateKey
 
-	// Разбор ключа в зависимости от типа PEM-блока
 	switch block.Type {
 	case "RSA PRIVATE KEY":
 		privateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
@@ -281,6 +375,5 @@ func AddPK(key_path string) server.Option {
 		log.Fatalf("Unknown key type %q", block.Type)
 	}
 
-	// После успешного получения приватного ключа, можно добавить его в опции
 	return server.PrivateKey(privateKey)
 }

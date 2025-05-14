@@ -1,31 +1,10 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"log"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"syscall"
 	"time"
 )
-
-func createFileInCurrentDir(filename string) error {
-	executablePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("не удалось получить путь к исполняемому файлу: %w", err)
-	}
-	dir := filepath.Dir(executablePath)
-	filePath := filepath.Join(dir, filename)
-	file, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("не удалось создать файл: %w", err)
-	}
-	defer file.Close()
-	fmt.Printf("Файл успешно создан: %s\n", filePath)
-	return nil
-}
 
 func SendCtrlBreak(groupID uint32) error {
 	kernel32 := syscall.NewLazyDLL("kernel32.dll")
@@ -40,24 +19,14 @@ func SendCtrlBreak(groupID uint32) error {
 	return nil
 }
 
-func ShutdownChildProcess(cmd *exec.Cmd, cancel context.CancelFunc) {
-	log.Println("Попытка корректно завершить дочерний процесс")
-	if cmd.Process == nil {
-		log.Println("Процесс не запущен")
-		cancel()
+func ShutdownCollector(cmd *exec.Cmd, timeout time.Duration) {
+	logger.Println("Завершаем collector.exe")
+	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		logger.Println("collector.exe уже завершён")
 		return
 	}
 
-	pid := uint32(cmd.Process.Pid)
-	err := SendCtrlBreak(pid)
-	if err != nil {
-		log.Println("Ошибка отправки CTRL_BREAK_EVENT:", err)
-
-	} else {
-		log.Println("CTRL_BREAK_EVENT отправлен")
-	}
-
-	done := make(chan error)
+	done := make(chan error, 1)
 	go func() {
 		done <- cmd.Wait()
 	}()
@@ -65,21 +34,18 @@ func ShutdownChildProcess(cmd *exec.Cmd, cancel context.CancelFunc) {
 	select {
 	case err := <-done:
 		if err != nil {
-			log.Println("Дочерний процесс завершился с ошибкой:", err)
-			createFileInCurrentDir("A GOOD ")
+			logger.Println("collector.exe завершился с ошибкой:", err)
 		} else {
-			log.Println("Дочерний процесс успешно завершился")
-			createFileInCurrentDir("A BD ")
+			logger.Println("collector.exe завершился корректно")
 		}
-	case <-time.After(5 * time.Second):
-		log.Println("Таймаут ожидания завершения дочернего процесса — принудительное убийство")
-		if kill_err := cmd.Process.Kill(); kill_err != nil {
-			log.Println("Ошибка принудительного убийства процесса:", kill_err)
+	case <-time.After(timeout):
+		logger.Println("Время ожидания завершения истекло, принудительное завершение collector.exe")
+		if err := cmd.Process.Kill(); err != nil {
+			logger.Println("Не удалось принудительно завершить collector.exe:", err)
+		} else {
+			logger.Println("collector.exe успешно принудительно завершён")
 		}
-		<-done
 	}
-
-	cancel()
 }
 
 func AddProcessToGroup(cmd *exec.Cmd) {

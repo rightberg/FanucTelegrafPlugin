@@ -11,7 +11,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strconv"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -34,70 +36,20 @@ type Server struct {
 }
 
 type Device struct {
-	Name    string `json:"name" yaml:"name"`
-	Address string `json:"address" yaml:"address"`
-	Series  string `json:"series" yaml:"series"`
-	Port    int    `json:"port" yaml:"port"`
+	Name         string   `json:"name" yaml:"name"`
+	Address      string   `json:"address" yaml:"address"`
+	Port         int      `json:"port" yaml:"port"`
+	DelayMs      int      `json:"delay_ms" yaml:"delay_ms"`
+	TagsPackName string   `yaml:"tags_pack_name"`
+	TagsPack     []string `json:"tags_pack" yaml:"tags_pack"`
 }
 
 type Config struct {
-	Logfile bool     `json:"logfile" yaml:"logfile"`
-	Server  Server   `json:"server" yaml:"server"`
-	Devices []Device `json:"devices" yaml:"devices"`
-}
-
-type FanucData struct {
-	// device data
-	Name    string `json:"name"`
-	Address string `json:"address"`
-	Series  string `json:"series"`
-	Port    int    `json:"port"`
-	// mode data
-	Aut        int16 `json:"aut"`
-	Run        int16 `json:"run"`
-	Edit       int16 `json:"edit"`
-	Shutdowns  int16 `json:"shutdowns"`
-	HightSpeed int16 `json:"hight_speed"`
-	Motion     int16 `json:"motion"`
-	Mstb       int16 `json:"mstb"`
-	LoadExcess int64 `json:"load_excess"`
-	// program data
-	Frame          string `json:"frame"`
-	MainProgNumber int16  `json:"main_prog_number"`
-	SubProgNumber  int16  `json:"sub_prog_number"`
-	PartsCount     int    `json:"parts_count"`
-	ToolNumber     int64  `json:"tool_number"`
-	FrameNumber    int64  `json:"frame_number"`
-	// axes data
-	JogOverride        int16          `json:"jog_override"`
-	FeedOverride       int16          `json:"feed_override"`
-	Feedrate           int64          `json:"feedrate"`
-	JogSpeed           int64          `json:"jog_speed"`
-	CurrentLoad        float64        `json:"current_load"`
-	CurrentLoadPercent float64        `json:"current_load_percent"`
-	ServoLoads         map[string]int `json:"servo_loads"`
-	AbsolutePositions  map[string]int `json:"absolute_positions"`
-	MachinePositions   map[string]int `json:"machine_positions"`
-	RelativePositions  map[string]int `json:"relative_positions"`
-	// spindle data
-	SpindleOverride   int16          `json:"spindle_override"`
-	SpindleSpeed      int64          `json:"spindle_speed"`
-	SpindleParamSpeed int64          `json:"spindle_param_speed"`
-	SpindleMotorSpeed map[string]int `json:"spindle_motor_speed"`
-	SpindleLoad       map[string]int `json:"spindle_load"`
-	// alarm data
-	Emergency int16 `json:"emergency"`
-	Alarm     int16 `json:"alarm"`
-	//other data
-	PowerOnTime   int64  `json:"power_on_time"`
-	OperationTime int64  `json:"operation_time"`
-	CuttingTime   int64  `json:"cutting_time"`
-	CycleTime     int64  `json:"cycle_time"`
-	SeriesNumber  string `json:"series_number"`
-	VersionNumber string `json:"version_number"`
-	// error data
-	Errors    []int16  `json:"errors"`
-	ErrorsStr []string `json:"errors_str"`
+	Logfile       bool                         `json:"logfile" yaml:"logfile"`
+	HandleTimeout int                          `json:"handle_timeout" yaml:"handle_timeout"`
+	Server        Server                       `json:"server" yaml:"server"`
+	Devices       []Device                     `json:"devices" yaml:"devices"`
+	TagPacks      map[string]map[string]string `yaml:"tag_packs"`
 }
 
 var config Config
@@ -106,10 +58,7 @@ var plugin_dir string
 var log_buf bytes.Buffer
 var logger *log.Logger
 
-func main() {
-	multi_writer := io.MultiWriter(os.Stdout, &log_buf)
-	logger = log.New(multi_writer, "Plugin: ", log.Ldate|log.Ltime|log.Lshortfile)
-	logger.Println("Запуск плагина")
+func InitCrashLog() {
 	defer func() {
 		if r := recover(); r != nil && log_buf.Len() > 0 {
 			logger.Println("Panic:", r)
@@ -122,10 +71,43 @@ func main() {
 				if err := os.WriteFile(crash_path, log_buf.Bytes(), 0644); err != nil {
 					logger.Println("Ошибка записи файла crash.log:", err)
 				}
-				os.Exit(1)
 			}
+			os.Exit(1)
 		}
 	}()
+}
+
+func InitLogFile() {
+	log_path := filepath.Join(plugin_dir, "plugin.log")
+	log_file, err := os.OpenFile(log_path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		logger.Println("Ошибка открытия файла логов:", err)
+		panic(err)
+	}
+	defer func() {
+		logger.Println("Завершение плагина")
+		if r := recover(); r != nil && log_buf.Len() == 0 {
+			logger.Println("Panic:", r)
+			trace := debug.Stack()
+			logger.Println(string(trace))
+			log_file.Close()
+			os.Exit(1)
+		}
+		log_file.Close()
+	}()
+	multi_writer := io.MultiWriter(os.Stdout, log_file)
+	logger = log.New(multi_writer, "Plugin: ", log.Ldate|log.Ltime|log.Lshortfile)
+	if log_buf.Len() > 0 {
+		logger.Println(log_buf.String())
+	}
+	log_buf.Reset()
+}
+
+func main() {
+	multi_writer := io.MultiWriter(os.Stdout, &log_buf)
+	logger = log.New(multi_writer, "Plugin: ", log.Ldate|log.Ltime|log.Lshortfile)
+	logger.Println("Запуск плагина")
+	InitCrashLog()
 
 	plugin_path, err := os.Executable()
 	if err != nil {
@@ -135,42 +117,19 @@ func main() {
 	plugin_dir = filepath.Dir(plugin_path)
 
 	data_path := filepath.Join(plugin_dir, "plugin.conf")
-	fileContent, err := os.ReadFile(data_path)
+	file_content, err := os.ReadFile(data_path)
 	if err != nil {
 		logger.Println("Ошибка чтения файла:", err)
 		panic(err)
 	}
-
-	err = yaml.Unmarshal(fileContent, &config)
+	err = yaml.Unmarshal(file_content, &config)
 	if err != nil {
 		logger.Println("Ошибка чтения plugin.conf (yaml):", err)
 		panic(err)
 	}
 
 	if config.Logfile {
-		log_path := filepath.Join(plugin_dir, "plugin.log")
-		log_file, err := os.OpenFile(log_path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			logger.Println("Ошибка открытия файла логов:", err)
-			panic(err)
-		}
-		defer func() {
-			logger.Println("Завершение плагина")
-			if r := recover(); r != nil && log_buf.Len() == 0 {
-				logger.Println("Panic:", r)
-				trace := debug.Stack()
-				logger.Println(string(trace))
-				log_file.Close()
-				os.Exit(1)
-			}
-			log_file.Close()
-		}()
-		multiWriter := io.MultiWriter(os.Stdout, log_file)
-		logger = log.New(multiWriter, "Plugin: ", log.Ldate|log.Ltime|log.Lshortfile)
-		if log_buf.Len() > 0 {
-			logger.Println(log_buf.String())
-		}
-		log_buf.Reset()
+		InitLogFile()
 	}
 
 	for index := range config.Devices {
@@ -181,8 +140,23 @@ func main() {
 	}
 
 	if config.Server.Status {
-		inicialize()
-		go start()
+		InitServer()
+		go StartServer()
+	}
+
+	for index := range config.Devices {
+		for pack_name, tags_map := range config.TagPacks {
+			var tags_pack []string
+			if pack_name == config.Devices[index].TagsPackName {
+				for tag := range tags_map {
+					proc_tag := GetStrSliceByDot(tag)[0]
+					if !slices.Contains(tags_pack, proc_tag) {
+						tags_pack = append(tags_pack, proc_tag)
+					}
+				}
+			}
+			config.Devices[index].TagsPack = tags_pack
+		}
 	}
 
 	json_devices, err := json.Marshal(config.Devices)
@@ -193,9 +167,16 @@ func main() {
 
 	collector_path := filepath.Join(plugin_dir, "collector.exe")
 	pid := os.Getpid()
-	cmd := exec.Command(collector_path, string(json_devices), fmt.Sprintf("%d", pid))
+	cmd := exec.Command(
+		collector_path, string(json_devices),
+		fmt.Sprintf("%d", pid),
+		fmt.Sprintf("%d", config.HandleTimeout))
 	AddProcessToGroup(cmd)
-
+	stderr_pipe, err := cmd.StderrPipe()
+	if err != nil {
+		logger.Println("Ошибка получения StderrPipe:", err)
+		panic(err)
+	}
 	stdout_pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		logger.Println("Ошибка получения StdoutPipe:", err)
@@ -205,32 +186,30 @@ func main() {
 		logger.Println("Ошибка запуска сборщика:", err)
 		panic(err)
 	}
-
+	logger.Println("collector.exe запущен")
+	go func() {
+		stderr_scanner := bufio.NewScanner(stderr_pipe)
+		for stderr_scanner.Scan() {
+			logger.Println("collector error: ", stderr_scanner.Text())
+		}
+	}()
 	scanner := bufio.NewScanner(stdout_pipe)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if len(line) == 0 {
 			continue
 		}
-
-		var data FanucData
-		err := json.Unmarshal([]byte(line), &data)
-		if err == nil && config.Server.Status {
-			UpdateCollector(data)
+		if json.Valid([]byte(line)) {
+			if config.Server.Status {
+				UpdateCollector(line)
+			}
+			fmt.Fprintln(os.Stdout, line)
 		}
-		if err != nil {
-			logger.Println("Unmarshal error fanuc data", err)
-			logger.Println(string(line))
-		}
-		fmt.Fprintln(os.Stdout, line)
 	}
 	if err := scanner.Err(); err != nil {
 		logger.Println("Ошибка чтения данных сборщика:", err)
 	}
-	logger.Println("Завершение collector.exe")
-	if err := cmd.Wait(); err != nil {
-		logger.Println("collector завершился с ошибкой:", err)
-	} else {
-		logger.Println("collector завершился корректно")
-	}
+
+	device_count := len(config.Devices)
+	ShutdownCollector(cmd, time.Second*time.Duration(device_count*10))
 }

@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/csv"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -42,8 +41,13 @@ func GetCSVNodeAtOpcNode(node *server.Node) CSVNode {
 }
 
 func GetTagsAtOpcNodes(name string) []CSVNode {
-	csv_nodes := []CSVNode{}
-	for _, node := range GetDeviceNodes(name) {
+	device_nodes := GetDeviceNodes(name)
+	if len(device_nodes) == 0 {
+		logger.Println("Отсутствуют узлы для преобразования в CSV")
+		return []CSVNode{}
+	}
+	var csv_nodes []CSVNode
+	for _, node := range device_nodes {
 		csv_nodes = append(csv_nodes, GetCSVNodeAtOpcNode(node))
 	}
 	return csv_nodes
@@ -51,21 +55,20 @@ func GetTagsAtOpcNodes(name string) []CSVNode {
 
 func MakeCSV(nodes []CSVNode, name string, plugin_path string) {
 	if len(nodes) == 0 {
-		fmt.Println("Отсутсвуют узлы для записи")
+		logger.Println("Отсутсвуют узлы для записи")
 		return
 	}
 	name += ".csv"
 
 	dir_path := filepath.Join(plugin_path, "csv")
 	file_path := filepath.Join(dir_path, name)
-
 	if _, err := os.Stat(dir_path); os.IsNotExist(err) {
 		os.MkdirAll(dir_path, os.ModePerm)
 	}
 
 	file, err := os.Create(file_path)
 	if err != nil {
-		fmt.Println("Ошибка создания файла:", err)
+		logger.Println("Ошибка создания файла: ", err)
 	}
 	defer file.Close()
 
@@ -75,14 +78,14 @@ func MakeCSV(nodes []CSVNode, name string, plugin_path string) {
 	headers := []string{"Tag Name", "Address", "Data Type", "Description"}
 	err = writer.Write(headers)
 	if err != nil {
-		fmt.Println("Ошибка записи заголовков:", err)
+		logger.Println("Ошибка записи заголовков: ", err)
 	}
 
 	for _, node := range nodes {
 		row := []string{node.TagName, node.Address, node.DataType, node.Description}
 		err = writer.Write(row)
 		if err != nil {
-			fmt.Println("Ошибка записи строки:", err)
+			logger.Println("Ошибка записи строки:", err)
 		}
 	}
 }

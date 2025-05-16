@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/pem"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -85,22 +84,62 @@ func GetStrSliceByDot(str string) []string {
 	return strings.Split(str, ".")
 }
 
-func GetDeviceNodes(device_name string) []*server.Node {
-	var result []*server.Node
-	var tags_pack string
-	for _, device := range config.Devices {
-		if device.Name == device_name && len(device.TagsPackName) != 0 {
-			tags_pack = device.TagsPackName
+func LoadTagPacks() {
+	for index := range config.Devices {
+		for pack_name, tags_map := range config.TagPacks {
+			var tags_pack []string
+			if pack_name == config.Devices[index].TagsPackName {
+				for tag := range tags_map {
+					proc_tag := GetStrSliceByDot(tag)[0]
+					if !slices.Contains(tags_pack, proc_tag) {
+						tags_pack = append(tags_pack, proc_tag)
+					}
+				}
+			}
+			config.Devices[index].TagsPack = tags_pack
 		}
 	}
-	addresses := config.TagPacks[tags_pack]
-	node_ns := GetNodeNamespace(_server, fanuc_ns)
-	if node_ns != nil {
-		for address := range addresses {
-			device_address := fmt.Sprintf("ns=%d;s=%s", fanuc_ns, device_name)
-			node := GetNodeAtAddress(node_ns, device_address+"/"+address)
-			if node != nil {
-				result = append(result, node)
+}
+
+func GetDeviceNodes(device_name string) []*server.Node {
+	// var result []*server.Node
+	// var tags_pack string
+	// for _, device := range config.Devices {
+	// 	if device.Name == device_name && len(device.TagsPackName) != 0 {
+	// 		tags_pack = device.TagsPackName
+	// 	}
+	// }
+	// addresses := config.TagPacks[tags_pack]
+	// node_ns := GetNodeNamespace(_server, fanuc_ns)
+	// if node_ns != nil {
+	// 	for address := range addresses {
+	// 		device_address := fmt.Sprintf("ns=%d;s=%s", fanuc_ns, device_name)
+	// 		node := GetNodeAtAddress(node_ns, device_address+"/"+address)
+	// 		if node != nil {
+	// 			result = append(result, node)
+	// 		}
+	// 	}
+	// }
+	// return result
+	var result []*server.Node
+	if _, ok := device_map[device_name]; !ok {
+		return result
+	}
+	var tags_pack_name string
+	for _, device := range config.Devices {
+		if device_name == device.Name {
+			tags_pack_name = device.TagsPackName
+			break
+		}
+	}
+	if tags_pack, ok := config.TagPacks[tags_pack_name]; ok {
+		node_ns := GetNodeNamespace(_server, fanuc_ns)
+		if node_ns != nil {
+			for tag_name := range tags_pack {
+				node := GetNodeAtAddress(node_ns, device_map[device_name]+"/"+tag_name)
+				if node != nil {
+					result = append(result, node)
+				}
 			}
 		}
 	}
@@ -108,7 +147,7 @@ func GetDeviceNodes(device_name string) []*server.Node {
 }
 
 func UpdateCollector(json_data string) {
-	decode_data, ok := gjson.Parse(json_data).Value().(map[string]interface{})
+	decode_data, ok := gjson.Parse(json_data).Value().(map[string]any)
 	if !ok {
 		logger.Println("Ошибка приведения: JSON не является map")
 		return
@@ -124,8 +163,8 @@ func UpdateCollector(json_data string) {
 		logger.Println("(Update node value) устройство отсутсвует:", device_name)
 		return
 	}
-	var tag_info []string
-	var proc_value any
+	var tag_sliced []string
+	var converted_value any
 	var tags_pack_name string
 	for index := range config.Devices {
 		if device_name == config.Devices[index].Name {
@@ -133,40 +172,37 @@ func UpdateCollector(json_data string) {
 			break
 		}
 	}
-	for tag_full_name, tag_type := range config.TagPacks[tags_pack_name] {
-		tag_info = GetStrSliceByDot(tag_full_name)
-		switch len(tag_info) {
+	for tag_name, tag_type := range config.TagPacks[tags_pack_name] {
+		tag_sliced = GetStrSliceByDot(tag_name)
+		switch len(tag_sliced) {
 		case 1:
-			proc_value = ConvertValueByType(decode_data[tag_info[0]], tag_type)
+			converted_value = ConvertValueByType(decode_data[tag_sliced[0]], tag_type)
 		case 2:
-			proc_value = ConvertMapValueAtKey(tag_info[1], decode_data[tag_info[0]], tag_type)
+			converted_value = ConvertMapValueAtKey(tag_sliced[1], decode_data[tag_sliced[0]], tag_type)
 		default:
 			continue
 		}
-		UpdateNodeValueAtAddress(node_ns, device_address+"/"+tag_full_name, proc_value)
+		UpdateNodeValueAtAddress(node_ns, device_address+"/"+tag_name, converted_value)
 	}
 }
 
 func CreateDeviceNodes(devices []Device, node_ns *server.NodeNameSpace) {
 	node_obj := node_ns.Objects()
 	device_map = make(map[string]string)
-	for index := range devices {
-		device_folder := GetFolderNode(node_ns, node_obj, devices[index].Name)
-		tags_pack := devices[index].TagsPackName
+	for _, device := range devices {
+		device_folder := GetFolderNode(node_ns, node_obj, device.Name)
+		tags_pack := device.TagsPackName
 		if len(tags_pack) != 0 {
 			var tag_info []string
-			var proc_value any
 			pack_tags := config.TagPacks[tags_pack]
-			for tag_full_name, tag_type := range pack_tags {
-				tag_info = GetStrSliceByDot(tag_full_name)
-				if len(tag_info) >= 3 {
-					continue
+			for tag_name, tag_type := range pack_tags {
+				tag_info = GetStrSliceByDot(tag_name)
+				if len(tag_info) <= 2 {
+					AddVariableNode(node_ns, device_folder, tag_name, GetZeroValueByTagType(tag_type))
 				}
-				proc_value = GetZeroValueByTagType(tag_type)
-				AddVariableNode(node_ns, device_folder, tag_full_name, proc_value)
 			}
 		}
-		device_map[devices[index].Name] = device_folder.ID().String()
+		device_map[device.Name] = device_folder.ID().String()
 	}
 }
 
@@ -240,23 +276,23 @@ func InitServer() {
 		if !cert_created && !key_created && !cert_der_created {
 			c, k, err := GenerateCert(endpoints_str, 2048, time.Minute*60*24*365*10)
 			if err != nil {
-				panic("Проблема генерации cert " + err.Error())
+				logger.Panicf("Проблема генерации сертификата \n%v", err)
 			}
 			err = os.WriteFile(cert_pem_path, c, 0644)
 			if err != nil {
-				panic("Проблема записи файла PEM cert: " + err.Error())
+				logger.Panicf("Проблема записи файла PEM сертификата \n%v", err)
 			}
 			err = os.WriteFile(key_pem_path, k, 0644)
 			if err != nil {
-				panic("Проблема записи файла PEM key: " + err.Error())
+				logger.Panicf("Проблема записи файла PEM ключа \n%v", err)
 			}
 			der, _ := pem.Decode(c)
 			if der == nil {
-				panic("Ошибка парсинга PEM данных (cert)")
+				logger.Panicln("Ошибка парсинга PEM данных сертификата")
 			}
 			err = os.WriteFile(cert_der_path, der.Bytes, 0644)
 			if err != nil {
-				panic("Проблема записи файла DER cert: " + err.Error())
+				logger.Panicf("Проблема записи файла DER сертификата \n%v", err)
 			}
 		}
 	}
@@ -266,11 +302,11 @@ func InitServer() {
 		logger.Printf("Загрузка cert/key")
 		c, err := tls.LoadX509KeyPair(cert_pem_path, key_pem_path)
 		if err != nil {
-			logger.Println("Ошибка загрузки сертификата: ", err)
+			logger.Panicf("Ошибка загрузки сертификата \n%v", err)
 		} else {
 			pk, ok := c.PrivateKey.(*rsa.PrivateKey)
 			if !ok {
-				logger.Fatalf("Некорректный private key")
+				logger.Panicln("Некорректный приватный ключ")
 			}
 			cert = c.Certificate[0]
 			opts = append(opts, server.PrivateKey(pk), server.Certificate(cert))
@@ -282,7 +318,7 @@ func InitServer() {
 				opt := AddCert(lcert)
 				if opt != nil {
 					opts = append(opts, opt)
-					fmt.Println(lcert)
+					logger.Println("Сертификат успешно добавлен, путь: ", lcert)
 				}
 			}
 		}
@@ -293,7 +329,7 @@ func InitServer() {
 				opt := AddPK(lkey)
 				if opt != nil {
 					opts = append(opts, opt)
-					fmt.Println(lkey)
+					logger.Println("Приватный ключ успешно добавлен, путь: ", lkey)
 				}
 			}
 		}
@@ -315,8 +351,9 @@ func InitServer() {
 }
 
 func StartServer() {
+	InitServer()
 	if err := _server.Start(context.Background()); err != nil {
-		log.Fatalf("Ошибка запуска сервера: %s", err)
+		logger.Panicf("Ошибка запуска сервера \n%v", err)
 	}
 	defer _server.Close()
 	sigch := make(chan os.Signal, 1)

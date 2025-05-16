@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"log"
 	"os"
 	"reflect"
 	"slices"
@@ -331,49 +330,54 @@ func GetEndpointOptions(endpoints []ImportEndpoint) []server.Option {
 }
 
 func AddCert(cert_path string) server.Option {
-	certDER, err := os.ReadFile(cert_path)
-	if err == nil {
-		if _, err := x509.ParseCertificate(certDER); err != nil {
-			log.Printf("Error parsing DER certificate: %v", err)
-		} else {
-			return server.Certificate(certDER)
-		}
+	cert_der, err := os.ReadFile(cert_path)
+	if err != nil {
+		logger.Printf("Ошибка чтения файла сертификата: %s %v", cert_der, err)
+	}
+	if _, err := x509.ParseCertificate(cert_der); err != nil {
+		logger.Println("Ошибка парсинга DER сертификата: ", err)
+	} else {
+		return server.Certificate(cert_der)
 	}
 	return nil
 }
 
 func AddPK(key_path string) server.Option {
-	keyBytes, err := os.ReadFile(key_path)
+	key_bytes, err := os.ReadFile(key_path)
 	if err != nil {
-		logger.Fatalf("Failed to read key file: %v", err)
+		logger.Printf("Ошибка чтения private key файла: %s %s", key_path, err.Error())
+		return nil
 	}
 
-	block, _ := pem.Decode(keyBytes)
+	block, _ := pem.Decode(key_bytes)
 	if block == nil {
-		logger.Fatalf("Failed to decode PEM block containing the key")
+		logger.Println("Не удалось декодировать PEM-блок, содержащий ключ")
+		return nil
 	}
 
-	var privateKey *rsa.PrivateKey
-
+	var private_key *rsa.PrivateKey
 	switch block.Type {
 	case "RSA PRIVATE KEY":
-		privateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		private_key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
 		if err != nil {
-			log.Fatalf("Failed to parse PKCS1 private key: %v", err)
+			logger.Printf("Не удалось разобрать закрытый ключ PKCS1: %v", err)
+			return nil
 		}
 	case "PRIVATE KEY":
-		keyInterface, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		not_rsa_key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 		if err != nil {
-			log.Fatalf("Failed to parse PKCS8 private key: %v", err)
+			logger.Printf("Не удалось разобрать закрытый ключ PKCS8: %v", err)
+			return nil
 		}
 		var ok bool
-		privateKey, ok = keyInterface.(*rsa.PrivateKey)
+		private_key, ok = not_rsa_key.(*rsa.PrivateKey)
 		if !ok {
-			log.Fatalf("Parsed key is not an RSA private key")
+			logger.Println("Разобранный ключ не является закрытым ключом RSA")
+			return nil
 		}
 	default:
-		log.Fatalf("Unknown key type %q", block.Type)
+		logger.Printf("Неизвестный тип ключа %q", block.Type)
+		return nil
 	}
-
-	return server.PrivateKey(privateKey)
+	return server.PrivateKey(private_key)
 }

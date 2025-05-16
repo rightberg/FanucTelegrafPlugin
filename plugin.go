@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"slices"
-	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -57,112 +56,99 @@ var plugin_dir string
 
 var log_buf bytes.Buffer
 var logger *log.Logger
+var log_file *os.File
 
 func InitCrashLog() {
-	defer func() {
-		if r := recover(); r != nil && log_buf.Len() > 0 {
-			logger.Println("Panic:", r)
-			trace := debug.Stack()
-			logger.Println(string(trace))
-			plugin_path, err := os.Executable()
-			if err == nil {
-				dir := filepath.Dir(plugin_path)
-				crash_path := filepath.Join(dir, "crash.log")
-				if err := os.WriteFile(crash_path, log_buf.Bytes(), 0644); err != nil {
-					logger.Println("Ошибка записи файла crash.log:", err)
-				}
+	logger.Println("Завершение плагина")
+	if r := recover(); r != nil && log_buf.Len() > 0 {
+		logger.Println("Panic:", r)
+		trace := debug.Stack()
+		logger.Println(string(trace))
+		plugin_path, err := os.Executable()
+		if err == nil {
+			dir := filepath.Dir(plugin_path)
+			crash_path := filepath.Join(dir, "crash.log")
+			if err := os.WriteFile(crash_path, log_buf.Bytes(), 0644); err != nil {
+				logger.Println("Ошибка записи файла crash.log:", err)
 			}
-			os.Exit(1)
 		}
-	}()
+		os.Exit(1)
+	}
 }
 
 func InitLogFile() {
-	log_path := filepath.Join(plugin_dir, "plugin.log")
-	log_file, err := os.OpenFile(log_path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		logger.Println("Ошибка открытия файла логов:", err)
-		panic(err)
-	}
-	defer func() {
-		logger.Println("Завершение плагина")
-		if r := recover(); r != nil && log_buf.Len() == 0 {
-			logger.Println("Panic:", r)
-			trace := debug.Stack()
-			logger.Println(string(trace))
-			log_file.Close()
-			os.Exit(1)
-		}
+	logger.Println("Завершение плагина")
+	if r := recover(); r != nil && log_buf.Len() == 0 {
+		logger.Println("Panic:", r)
+		trace := debug.Stack()
+		logger.Println(string(trace))
 		log_file.Close()
-	}()
-	multi_writer := io.MultiWriter(os.Stdout, log_file)
-	logger = log.New(multi_writer, "Plugin: ", log.Ldate|log.Ltime|log.Lshortfile)
-	if log_buf.Len() > 0 {
-		logger.Println(log_buf.String())
+		os.Exit(1)
 	}
-	log_buf.Reset()
 }
 
 func main() {
 	multi_writer := io.MultiWriter(os.Stdout, &log_buf)
 	logger = log.New(multi_writer, "Plugin: ", log.Ldate|log.Ltime|log.Lshortfile)
 	logger.Println("Запуск плагина")
-	InitCrashLog()
+	defer InitCrashLog()
 
 	plugin_path, err := os.Executable()
 	if err != nil {
-		logger.Println("Ошибка при определении пути исполняемого файла:", err)
-		panic(err)
+		logger.Panicf("Ошибка при определении пути исполняемого файла \n%v", err)
 	}
 	plugin_dir = filepath.Dir(plugin_path)
 
 	data_path := filepath.Join(plugin_dir, "plugin.conf")
 	file_content, err := os.ReadFile(data_path)
 	if err != nil {
-		logger.Println("Ошибка чтения файла:", err)
-		panic(err)
+		logger.Panicf("Ошибка чтения файла \n%v", err)
 	}
 	err = yaml.Unmarshal(file_content, &config)
 	if err != nil {
-		logger.Println("Ошибка чтения plugin.conf (yaml):", err)
-		panic(err)
+		logger.Panicf("Ошибка чтения plugin.conf (yaml) \n%v", err)
 	}
 
 	if config.Logfile {
-		InitLogFile()
+		log_path := filepath.Join(plugin_dir, "plugin.log")
+		log_file, err = os.OpenFile(log_path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			logger.Panicf("Ошибка открытия файла логов \n%v", err)
+		}
+		multi_writer := io.MultiWriter(os.Stdout, log_file)
+		logger = log.New(multi_writer, "Plugin: ", log.Ldate|log.Ltime|log.Lshortfile)
+		if log_buf.Len() > 0 {
+			logger.Println(log_buf.String())
+		}
+		log_buf.Reset()
+		defer InitLogFile()
 	}
 
-	for index := range config.Devices {
-		str_index := strconv.Itoa(index)
-		if config.Devices[index].Name == "" {
-			config.Devices[index].Name = "Device " + str_index
+	if len(config.Devices) == 0 {
+		logger.Panicln("Добавьте устройства для сбора данных")
+	}
+
+	var device_names []string
+	var device_addresses []string
+	for _, device := range config.Devices {
+		if slices.Contains(device_names, device.Name) {
+			logger.Panicf("Устройство с именем %s уже существует", device.Name)
 		}
+		if slices.Contains(device_addresses, device.Address) {
+			logger.Panicf("Устройство с адресом %s уже существует", device.Name)
+		}
+		device_names = append(device_names, device.Name)
+		device_addresses = append(device_addresses, device.Address)
 	}
 
 	if config.Server.Status {
-		InitServer()
+		LoadTagPacks()
 		go StartServer()
-	}
-
-	for index := range config.Devices {
-		for pack_name, tags_map := range config.TagPacks {
-			var tags_pack []string
-			if pack_name == config.Devices[index].TagsPackName {
-				for tag := range tags_map {
-					proc_tag := GetStrSliceByDot(tag)[0]
-					if !slices.Contains(tags_pack, proc_tag) {
-						tags_pack = append(tags_pack, proc_tag)
-					}
-				}
-			}
-			config.Devices[index].TagsPack = tags_pack
-		}
 	}
 
 	json_devices, err := json.Marshal(config.Devices)
 	if err != nil {
-		logger.Println("Ошибка формирования списка устройств (Json):", err)
-		panic(err)
+		logger.Panicf("Ошибка формирования списка устройств (Json) \n%v", err)
 	}
 
 	collector_path := filepath.Join(plugin_dir, "collector.exe")
@@ -174,17 +160,14 @@ func main() {
 	AddProcessToGroup(cmd)
 	stderr_pipe, err := cmd.StderrPipe()
 	if err != nil {
-		logger.Println("Ошибка получения StderrPipe:", err)
-		panic(err)
+		logger.Panicf("Ошибка получения StderrPipe \n%v", err)
 	}
 	stdout_pipe, err := cmd.StdoutPipe()
 	if err != nil {
-		logger.Println("Ошибка получения StdoutPipe:", err)
-		panic(err)
+		logger.Panicf("Ошибка получения StdoutPipe \n%v", err)
 	}
 	if err := cmd.Start(); err != nil {
-		logger.Println("Ошибка запуска сборщика:", err)
-		panic(err)
+		logger.Panicf("Ошибка запуска сборщика \n%v", err)
 	}
 	logger.Println("collector.exe запущен")
 	go func() {
@@ -207,7 +190,7 @@ func main() {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		logger.Println("Ошибка чтения данных сборщика:", err)
+		logger.Println("Ошибка чтения данных сборщика: ", err)
 	}
 
 	device_count := len(config.Devices)

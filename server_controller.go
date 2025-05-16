@@ -257,15 +257,15 @@ func InitServer() {
 		if !cert_created && !key_created && !cert_der_created {
 			c, k, err := GenerateCert(endpoints_str, 2048, time.Minute*60*24*365*10)
 			if err != nil {
-				logger.Panicf("Проблема генерации сертификата \n%v", err)
+				logger.Panicf("Проблема генерации сертификата %v", err)
 			}
 			err = os.WriteFile(cert_pem_path, c, 0644)
 			if err != nil {
-				logger.Panicf("Проблема записи файла PEM сертификата \n%v", err)
+				logger.Panicf("Проблема записи файла PEM сертификата %v", err)
 			}
 			err = os.WriteFile(key_pem_path, k, 0644)
 			if err != nil {
-				logger.Panicf("Проблема записи файла PEM ключа \n%v", err)
+				logger.Panicf("Проблема записи файла PEM ключа %v", err)
 			}
 			der, _ := pem.Decode(c)
 			if der == nil {
@@ -273,7 +273,7 @@ func InitServer() {
 			}
 			err = os.WriteFile(cert_der_path, der.Bytes, 0644)
 			if err != nil {
-				logger.Panicf("Проблема записи файла DER сертификата \n%v", err)
+				logger.Panicf("Проблема записи файла DER сертификата %v", err)
 			}
 		}
 	}
@@ -283,7 +283,7 @@ func InitServer() {
 		logger.Printf("Загрузка cert/key")
 		c, err := tls.LoadX509KeyPair(cert_pem_path, key_pem_path)
 		if err != nil {
-			logger.Panicf("Ошибка загрузки сертификата \n%v", err)
+			logger.Panicf("Ошибка загрузки сертификата %v", err)
 		} else {
 			pk, ok := c.PrivateKey.(*rsa.PrivateKey)
 			if !ok {
@@ -334,7 +334,7 @@ func InitServer() {
 func StartServer() {
 	InitServer()
 	if err := _server.Start(context.Background()); err != nil {
-		logger.Panicf("Ошибка запуска сервера \n%v", err)
+		logger.Panicf("Ошибка запуска сервера %v", err)
 	}
 	defer _server.Close()
 	sigch := make(chan os.Signal, 1)

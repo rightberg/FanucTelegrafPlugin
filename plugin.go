@@ -95,25 +95,25 @@ func main() {
 
 	plugin_path, err := os.Executable()
 	if err != nil {
-		logger.Panicf("Ошибка при определении пути исполняемого файла \n%v", err)
+		logger.Panicf("Ошибка при определении пути исполняемого файла %v", err)
 	}
 	plugin_dir = filepath.Dir(plugin_path)
 
 	data_path := filepath.Join(plugin_dir, "plugin.conf")
 	file_content, err := os.ReadFile(data_path)
 	if err != nil {
-		logger.Panicf("Ошибка чтения файла \n%v", err)
+		logger.Panicf("Ошибка чтения файла %v", err)
 	}
 	err = yaml.Unmarshal(file_content, &config)
 	if err != nil {
-		logger.Panicf("Ошибка чтения plugin.conf (yaml) \n%v", err)
+		logger.Panicf("Ошибка чтения plugin.conf (yaml) %v", err)
 	}
 
 	if config.Logfile {
 		log_path := filepath.Join(plugin_dir, "plugin.log")
 		log_file, err = os.OpenFile(log_path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
-			logger.Panicf("Ошибка открытия файла логов \n%v", err)
+			logger.Panicf("Ошибка открытия файла логов %v", err)
 		}
 		multi_writer := io.MultiWriter(os.Stdout, log_file)
 		logger = log.New(multi_writer, "Plugin: ", log.Ldate|log.Ltime|log.Lshortfile)
@@ -148,7 +148,7 @@ func main() {
 
 	json_devices, err := json.Marshal(config.Devices)
 	if err != nil {
-		logger.Panicf("Ошибка формирования списка устройств (Json) \n%v", err)
+		logger.Panicf("Ошибка формирования списка устройств (Json) %v", err)
 	}
 
 	collector_path := filepath.Join(plugin_dir, "collector.exe")
@@ -160,14 +160,14 @@ func main() {
 	AddProcessToGroup(cmd)
 	stderr_pipe, err := cmd.StderrPipe()
 	if err != nil {
-		logger.Panicf("Ошибка получения StderrPipe \n%v", err)
+		logger.Panicf("Ошибка получения StderrPipe %v", err)
 	}
 	stdout_pipe, err := cmd.StdoutPipe()
 	if err != nil {
-		logger.Panicf("Ошибка получения StdoutPipe \n%v", err)
+		logger.Panicf("Ошибка получения StdoutPipe %v", err)
 	}
 	if err := cmd.Start(); err != nil {
-		logger.Panicf("Ошибка запуска сборщика \n%v", err)
+		logger.Panicf("Ошибка запуска сборщика %v", err)
 	}
 	logger.Println("collector.exe запущен")
 	go func() {

@@ -68,7 +68,7 @@ func MakeCSV(nodes []CSVNode, name string, plugin_path string) {
 
 	file, err := os.Create(file_path)
 	if err != nil {
-		logger.Println("Ошибка создания файла: ", err)
+		logger.Printf("Ошибка создания файла %v", err)
 	}
 	defer file.Close()
 
@@ -78,14 +78,14 @@ func MakeCSV(nodes []CSVNode, name string, plugin_path string) {
 	headers := []string{"Tag Name", "Address", "Data Type", "Description"}
 	err = writer.Write(headers)
 	if err != nil {
-		logger.Println("Ошибка записи заголовков: ", err)
+		logger.Printf("Ошибка записи заголовков %v", err)
 	}
 
 	for _, node := range nodes {
 		row := []string{node.TagName, node.Address, node.DataType, node.Description}
 		err = writer.Write(row)
 		if err != nil {
-			logger.Println("Ошибка записи строки:", err)
+			logger.Printf("Ошибка записи строки %v", err)
 		}
 	}
 }

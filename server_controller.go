@@ -86,7 +86,7 @@ func GetStrSliceByDot(str string) []string {
 
 func LoadTagPacks() {
 	for index := range config.Devices {
-		for pack_name, tags_map := range config.TagPacks {
+		for pack_name, tags_map := range config.Server.TagPacks {
 			var tags_pack []string
 			if pack_name == config.Devices[index].TagsPackName {
 				for tag_name := range tags_map {
@@ -113,7 +113,7 @@ func GetDeviceNodes(device_name string) []*server.Node {
 			break
 		}
 	}
-	if tags_pack, ok := config.TagPacks[tags_pack_name]; ok {
+	if tags_pack, ok := config.Server.TagPacks[tags_pack_name]; ok {
 		node_ns := GetNodeNamespace(_server, fanuc_ns)
 		if node_ns != nil {
 			for tag_name := range tags_pack {
@@ -153,7 +153,7 @@ func UpdateCollector(json_data string) {
 			break
 		}
 	}
-	for tag_name, tag_type := range config.TagPacks[tags_pack_name] {
+	for tag_name, tag_type := range config.Server.TagPacks[tags_pack_name] {
 		tag_sliced = GetStrSliceByDot(tag_name)
 		switch len(tag_sliced) {
 		case 1:
@@ -175,7 +175,7 @@ func CreateDeviceNodes(devices []Device, node_ns *server.NodeNameSpace) {
 		tags_pack := device.TagsPackName
 		if len(tags_pack) != 0 {
 			var tag_info []string
-			pack_tags := config.TagPacks[tags_pack]
+			pack_tags := config.Server.TagPacks[tags_pack]
 			for tag_name, tag_type := range pack_tags {
 				tag_info = GetStrSliceByDot(tag_name)
 				if len(tag_info) <= 2 {

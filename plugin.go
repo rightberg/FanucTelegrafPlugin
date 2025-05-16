@@ -23,15 +23,16 @@ type ImportEndpoint struct {
 }
 
 type Server struct {
-	Status       bool              `yaml:"status"`
-	Debug        bool              `yaml:"debug"`
-	MakeCert     bool              `yaml:"make_cert"`
-	MakeCSV      bool              `yaml:"make_csv"`
-	AuthModes    []string          `yaml:"auth_modes"`
-	TrustedCerts []string          `yaml:"trusted_certs"`
-	TrustedKeys  []string          `yaml:"trusted_keys"`
-	Endpoints    []ImportEndpoint  `yaml:"endpoints"`
-	Security     map[string]string `yaml:"security"`
+	Status       bool                         `yaml:"status"`
+	Debug        bool                         `yaml:"debug"`
+	MakeCert     bool                         `yaml:"make_cert"`
+	MakeCSV      bool                         `yaml:"make_csv"`
+	AuthModes    []string                     `yaml:"auth_modes"`
+	TrustedCerts []string                     `yaml:"trusted_certs"`
+	TrustedKeys  []string                     `yaml:"trusted_keys"`
+	Endpoints    []ImportEndpoint             `yaml:"endpoints"`
+	Security     map[string]string            `yaml:"security"`
+	TagPacks     map[string]map[string]string `yaml:"tag_packs"`
 }
 
 type Device struct {
@@ -44,11 +45,10 @@ type Device struct {
 }
 
 type Config struct {
-	Logfile       bool                         `json:"logfile" yaml:"logfile"`
-	HandleTimeout int                          `json:"handle_timeout" yaml:"handle_timeout"`
-	Server        Server                       `json:"server" yaml:"server"`
-	Devices       []Device                     `json:"devices" yaml:"devices"`
-	TagPacks      map[string]map[string]string `yaml:"tag_packs"`
+	Logfile       bool     `json:"logfile" yaml:"logfile"`
+	HandleTimeout int      `json:"handle_timeout" yaml:"handle_timeout"`
+	Devices       []Device `json:"devices" yaml:"devices"`
+	Server        Server   `json:"server" yaml:"server"`
 }
 
 var config Config
@@ -59,7 +59,6 @@ var logger *log.Logger
 var log_file *os.File
 
 func InitCrashLog() {
-	logger.Println("Завершение плагина")
 	if r := recover(); r != nil && log_buf.Len() > 0 {
 		logger.Println("Panic:", r)
 		trace := debug.Stack()
@@ -77,7 +76,6 @@ func InitCrashLog() {
 }
 
 func InitLogFile() {
-	logger.Println("Завершение плагина")
 	if r := recover(); r != nil && log_buf.Len() == 0 {
 		logger.Println("Panic:", r)
 		trace := debug.Stack()

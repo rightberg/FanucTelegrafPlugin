@@ -89,10 +89,10 @@ func LoadTagPacks() {
 		for pack_name, tags_map := range config.TagPacks {
 			var tags_pack []string
 			if pack_name == config.Devices[index].TagsPackName {
-				for tag := range tags_map {
-					proc_tag := GetStrSliceByDot(tag)[0]
-					if !slices.Contains(tags_pack, proc_tag) {
-						tags_pack = append(tags_pack, proc_tag)
+				for tag_name := range tags_map {
+					tag := GetStrSliceByDot(tag_name)[0]
+					if !slices.Contains(tags_pack, tag) {
+						tags_pack = append(tags_pack, tag)
 					}
 				}
 			}
@@ -102,25 +102,6 @@ func LoadTagPacks() {
 }
 
 func GetDeviceNodes(device_name string) []*server.Node {
-	// var result []*server.Node
-	// var tags_pack string
-	// for _, device := range config.Devices {
-	// 	if device.Name == device_name && len(device.TagsPackName) != 0 {
-	// 		tags_pack = device.TagsPackName
-	// 	}
-	// }
-	// addresses := config.TagPacks[tags_pack]
-	// node_ns := GetNodeNamespace(_server, fanuc_ns)
-	// if node_ns != nil {
-	// 	for address := range addresses {
-	// 		device_address := fmt.Sprintf("ns=%d;s=%s", fanuc_ns, device_name)
-	// 		node := GetNodeAtAddress(node_ns, device_address+"/"+address)
-	// 		if node != nil {
-	// 			result = append(result, node)
-	// 		}
-	// 	}
-	// }
-	// return result
 	var result []*server.Node
 	if _, ok := device_map[device_name]; !ok {
 		return result

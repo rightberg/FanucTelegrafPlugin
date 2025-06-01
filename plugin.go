@@ -1,18 +1,16 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"os"
-	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime/debug"
 	"slices"
-	"time"
+	"sync"
+	"syscall"
 
 	"gopkg.in/yaml.v3"
 )
@@ -40,8 +38,8 @@ type Device struct {
 	Address      string   `json:"address" yaml:"address"`
 	Port         int      `json:"port" yaml:"port"`
 	DelayMs      int      `json:"delay_ms" yaml:"delay_ms"`
-	TagsPackName string   `yaml:"tags_pack_name"`
 	TagsPack     []string `json:"tags_pack" yaml:"tags_pack"`
+	TagsPackName string   `json:"tags_pack_name" yaml:"tags_pack_name"`
 }
 
 type Config struct {
@@ -144,53 +142,83 @@ func main() {
 		go StartServer()
 	}
 
-	json_devices, err := json.Marshal(config.Devices)
-	if err != nil {
-		logger.Panicf("Ошибка формирования списка устройств (Json) %v", err)
+	var wait_group sync.WaitGroup
+	for index, device := range config.Devices {
+		handles = append(handles, 0)
+		wait_group.Add(1)
+		go FanucDataCollector(device, config.HandleTimeout, &running, &handles[index], &wait_group)
 	}
 
-	collector_path := filepath.Join(plugin_dir, "collector.exe")
-	pid := os.Getpid()
-	cmd := exec.Command(
-		collector_path, string(json_devices),
-		fmt.Sprintf("%d", pid),
-		fmt.Sprintf("%d", config.HandleTimeout))
-	AddProcessToGroup(cmd)
-	stderr_pipe, err := cmd.StderrPipe()
-	if err != nil {
-		logger.Panicf("Ошибка получения StderrPipe %v", err)
-	}
-	stdout_pipe, err := cmd.StdoutPipe()
-	if err != nil {
-		logger.Panicf("Ошибка получения StdoutPipe %v", err)
-	}
-	if err := cmd.Start(); err != nil {
-		logger.Panicf("Ошибка запуска сборщика %v", err)
-	}
-	logger.Println("collector.exe запущен")
 	go func() {
-		stderr_scanner := bufio.NewScanner(stderr_pipe)
-		for stderr_scanner.Scan() {
-			logger.Println("collector error: ", stderr_scanner.Text())
+		_, err := os.Stdin.Read(make([]byte, 1))
+		if err != nil {
+			go EndPlugin()
 		}
 	}()
-	scanner := bufio.NewScanner(stdout_pipe)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if len(line) == 0 {
-			continue
-		}
-		if json.Valid([]byte(line)) {
-			if config.Server.Status {
-				UpdateCollector(line)
-			}
-			fmt.Fprintln(os.Stdout, line)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		logger.Println("Ошибка чтения данных сборщика: ", err)
-	}
 
-	device_count := len(config.Devices)
-	ShutdownCollector(cmd, time.Second*time.Duration(device_count*10))
+	end_signal := make(chan os.Signal, 1)
+	signal.Notify(end_signal, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-end_signal
+		go EndPlugin()
+	}()
+
+	wait_group.Wait()
+	logger.Println("Окончание работы плагина: успешно")
+
+	// json_devices, err := json.Marshal(config.Devices)
+	// if err != nil {
+	// 	logger.Panicf("Ошибка формирования списка устройств (Json) %v", err)
+	// }
+
+	// collector_path := filepath.Join(plugin_dir, "collector.exe")
+	// pid := os.Getpid()
+	// cmd := exec.Command(
+	// 	collector_path, string(json_devices),
+	// 	fmt.Sprintf("%d", pid),
+	// 	fmt.Sprintf("%d", config.HandleTimeout))
+	// AddProcessToGroup(cmd)
+	// stderr_pipe, err := cmd.StderrPipe()
+	// if err != nil {
+	// 	logger.Panicf("Ошибка получения StderrPipe %v", err)
+	// }
+	// stdout_pipe, err := cmd.StdoutPipe()
+	// if err != nil {
+	// 	logger.Panicf("Ошибка получения StdoutPipe %v", err)
+	// }
+	// if err := cmd.Start(); err != nil {
+	// 	logger.Panicf("Ошибка запуска сборщика %v", err)
+	// }
+	// logger.Println("collector.exe запущен")
+	// go func() {
+	// 	_, err := os.Stdin.Read(make([]byte, 1))
+	// 	if err != nil {
+	// 		logger.Println("Завершение плагина")
+	// 	}
+	// }()
+	// go func() {
+	// 	stderr_scanner := bufio.NewScanner(stderr_pipe)
+	// 	for stderr_scanner.Scan() {
+	// 		logger.Println("collector error: ", stderr_scanner.Text())
+	// 	}
+	// }()
+	// scanner := bufio.NewScanner(stdout_pipe)
+	// for scanner.Scan() {
+	// 	line := scanner.Text()
+	// 	if len(line) == 0 {
+	// 		continue
+	// 	}
+	// 	if json.Valid([]byte(line)) {
+	// 		if config.Server.Status {
+	// 			UpdateCollector(line)
+	// 		}
+	// 		fmt.Fprintln(os.Stdout, line)
+	// 	}
+	// }
+	// if err := scanner.Err(); err != nil {
+	// 	logger.Println("Ошибка чтения данных сборщика: ", err)
+	// }
+	// device_count := len(config.Devices)
+	// ShutdownCollector(cmd, time.Second*time.Duration(device_count*10))
+
 }

@@ -86,8 +86,8 @@ func GetStrSliceByDot(str string) []string {
 
 func LoadTagPacks() {
 	for index := range config.Devices {
+		var tags_pack []string
 		for pack_name, tags_map := range config.Server.TagPacks {
-			var tags_pack []string
 			if pack_name == config.Devices[index].TagsPackName {
 				for tag_name := range tags_map {
 					tag := GetStrSliceByDot(tag_name)[0]

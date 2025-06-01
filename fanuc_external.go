@@ -82,7 +82,7 @@ func FanucDataCollector(device Device, timeout int, running *bool, handle *int, 
 				OutputFanucJsonData(go_json_data)
 				free_handle_error = int16(C.FreeHandleExternal(_handle.data))
 				if free_handle_error != 0 && stacked_handle == 0 && _handle.data != 0 {
-					//stacked_handle = int16(_handle.data)
+					stacked_handle = int16(_handle.data)
 					logger.Printf("Ошибка освобождения дескриптора, handle: %d, error: %d \n", _handle.data, free_handle_error)
 				}
 			} else if int(_handle.error) == -16 {
@@ -92,7 +92,7 @@ func FanucDataCollector(device Device, timeout int, running *bool, handle *int, 
 					go_json_data := C.GoString(c_json_data)
 					C.free(unsafe.Pointer(c_json_data))
 					OutputFanucJsonData(go_json_data)
-					//power_on = 0
+					power_on = 0
 				}
 			} else {
 				logger.Println("Ошибка получения дескриптора, error: ", _handle.error)

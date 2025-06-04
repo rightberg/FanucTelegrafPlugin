@@ -165,6 +165,7 @@ func main() {
 	}
 
 	var wait_group sync.WaitGroup
+	handles = make([]uint16, len(config.Devices))
 	for index, device := range config.Devices {
 		wait_group.Add(1)
 		handles[index] = 0

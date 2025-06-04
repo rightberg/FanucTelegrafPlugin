@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"slices"
 	"sync"
 	"syscall"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -56,6 +59,25 @@ var log_buf bytes.Buffer
 var logger *log.Logger
 var log_file *os.File
 
+var running = true
+var handles []uint16
+
+func EndPlugin() {
+	logger.Println("Завершение плагина")
+	running = false
+	time.Sleep(time.Duration(3) * time.Second)
+	FreeAllHandles(handles)
+}
+
+func OutputFanucData(json_data *string) {
+	if json.Valid([]byte(*json_data)) {
+		if config.Server.Status {
+			UpdateCollector(*json_data)
+		}
+		fmt.Fprintln(os.Stdout, *json_data)
+	}
+}
+
 func InitCrashLog() {
 	if r := recover(); r != nil && log_buf.Len() > 0 {
 		logger.Println("Panic:", r)
@@ -95,8 +117,8 @@ func main() {
 	}
 	plugin_dir = filepath.Dir(plugin_path)
 
-	data_path := filepath.Join(plugin_dir, "plugin.conf")
-	file_content, err := os.ReadFile(data_path)
+	config_path := filepath.Join(plugin_dir, "plugin.conf")
+	file_content, err := os.ReadFile(config_path)
 	if err != nil {
 		logger.Panicf("Ошибка чтения файла %v", err)
 	}
@@ -144,9 +166,9 @@ func main() {
 
 	var wait_group sync.WaitGroup
 	for index, device := range config.Devices {
-		handles = append(handles, 0)
 		wait_group.Add(1)
-		go FanucDataCollector(device, config.HandleTimeout, &running, &handles[index], &wait_group)
+		handles[index] = 0
+		go FanucDataCollector(device, config.HandleTimeout, &handles[index], &running, &wait_group)
 	}
 
 	go func() {

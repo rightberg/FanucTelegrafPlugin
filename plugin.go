@@ -164,6 +164,8 @@ func main() {
 		go StartServer()
 	}
 
+	go TryFreeExtraHandles(plugin_dir)
+
 	var wait_group sync.WaitGroup
 	handles = make([]uint16, len(config.Devices))
 	for index, device := range config.Devices {

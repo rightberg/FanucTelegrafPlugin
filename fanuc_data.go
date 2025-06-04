@@ -34,7 +34,7 @@ func FreeAllHandles(handles []uint16) {
 	}
 }
 
-func FreExtraHandles(file_dir string) {
+func TryFreeExtraHandles(file_dir string) {
 	file_path := filepath.Join(file_dir, "non_free_handles.json")
 	if _, err := os.Stat(file_path); os.IsNotExist(err) {
 		return

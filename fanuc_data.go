@@ -94,7 +94,7 @@ func FanucDataCollector(device Device, timeout int, global_handle *uint16, runni
 				*global_handle = handle
 				power_on = 1
 				json_data = GetFanucJsonData(&device, &handle, &handle_error)
-				OutputFanucData(&json_data)
+				OutputFanucData(json_data)
 				free_handle_error = FreeHandle(&handle)
 				if free_handle_error != 0 && stacked_handle == 0 && handle != 0 {
 					stacked_handle = handle
@@ -103,8 +103,8 @@ func FanucDataCollector(device Device, timeout int, global_handle *uint16, runni
 			case -16:
 				if power_on == 1 {
 					logger.Println("Отсутсвует питание устройства (EW_SOCKET: -16)")
-					json_data = GetFanucJsonData(&device, &handle, &handle_error)
-					OutputFanucData(&json_data)
+					json_data = GetDefaultJsonData(&device, &handle, &handle_error)
+					OutputFanucData(json_data)
 					power_on = 0
 				}
 			default:
@@ -113,6 +113,24 @@ func FanucDataCollector(device Device, timeout int, global_handle *uint16, runni
 			time.Sleep(time.Duration(device.DelayMs) * time.Millisecond)
 		}
 	}
+}
+
+func GetDefaultJsonData(device *Device, handle *uint16, handle_error *int16) string {
+	tag_map := make(map[string]any)
+	// default tags
+	tag_map["name"] = device.Name
+	tag_map["address"] = device.Address
+	tag_map["port"] = device.Port
+	if *handle_error == -16 {
+		tag_map["power_on"] = 0
+	} else {
+		tag_map["power_on"] = 1
+	}
+	json_data, err := json.Marshal(tag_map)
+	if err != nil {
+		return ""
+	}
+	return string(json_data)
 }
 
 func GetFanucJsonData(device *Device, handle *uint16, handle_error *int16) string {
@@ -216,11 +234,17 @@ func GetFanucJsonData(device *Device, handle *uint16, handle_error *int16) strin
 			tag_map["cnc_id"], errors["cnc_id"] = GetCncId(handle)
 		}
 	}
+	// clear error data
+	for tag_name, error_code := range errors {
+		if error_code != 0 {
+			delete(tag_map, tag_name)
+		}
+	}
 	// check errors tag
 	if slices.Contains(device.TagsPack, "errors") {
 		tag_map["errors"] = errors
 	}
-
+	// make json data
 	json_data, err := json.Marshal(tag_map)
 	if err != nil {
 		return "{}"

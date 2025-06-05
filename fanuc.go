@@ -46,7 +46,7 @@ func GetAut(handle *uint16) (int16, int16) {
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
-	return int16(buf.run), 0
+	return int16(buf.aut), 0
 }
 
 func GetRun(handle *uint16) (int16, int16) {
@@ -99,9 +99,9 @@ func GetG00(handle *uint16) (int16, int16) {
 }
 
 func GetShutdowns(handle *uint16) (int16, int16) {
-	var length C.ushort = 256
+	var length C.ushort = 1024
 	var blknum C.short
-	var buf [256]C.char
+	var buf [1024]C.char
 	ret := C.cnc_rdexecprog(C.ushort(*handle), &length, &blknum, &buf[0])
 	if ret != C.EW_OK {
 		return 0, int16(ret)
@@ -109,9 +109,9 @@ func GetShutdowns(handle *uint16) (int16, int16) {
 	commands := []string{"M00", "M01", "G04"}
 	go_str := C.GoString(&buf[0])
 	splitted_str := strings.Split(go_str, "\n")
-	for index, cmd := range commands {
+	for index := range commands {
 		for _, part := range splitted_str {
-			if strings.Contains(part, cmd) {
+			if strings.Contains(part, commands[index]) {
 				return int16(index), 0
 			}
 		}
@@ -195,6 +195,10 @@ func GetFrame(handle *uint16) (string, int16) {
 	go_str := C.GoString(&buf[0])
 	splitted_str := strings.Split(go_str, "\n")
 	find_part := "N"
+	frame_number, frame_number_error := GetFrameNumber(handle)
+	if frame_number_error == 0 && frame_number > 0 {
+		find_part = fmt.Sprintf("N%d", frame_number)
+	}
 	for _, check_str := range splitted_str {
 		if strings.Contains(check_str, find_part) {
 			return check_str, 0
@@ -205,7 +209,7 @@ func GetFrame(handle *uint16) (string, int16) {
 
 func GetPartsCount(handle *uint16) (int64, int16) {
 	var buf C.IODBPSD
-	ret := C.cnc_rdparam(C.ushort(*handle), 6711, -1, C.short(unsafe.Sizeof(buf)), &buf)
+	ret := C.cnc_rdparam(C.ushort(*handle), C.short(6711), C.short(-1), C.short(unsafe.Sizeof(buf)), &buf)
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
@@ -215,7 +219,7 @@ func GetPartsCount(handle *uint16) (int64, int16) {
 
 func GetToolNumber(handle *uint16) (int64, int16) {
 	var buf C.ODBTLIFE4
-	ret := C.cnc_toolnum(C.ushort(*handle), 0, 0, &buf)
+	ret := C.cnc_toolnum(C.ushort(*handle), C.short(0), C.short(0), &buf)
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
@@ -233,6 +237,9 @@ func GetAbsolutePositions(handle *uint16) (map[string]float64, int16) {
 	}
 	for _, data := range buf {
 		name := string(byte(data.abs.name))
+		if name == "" || strings.ContainsRune(name, '\u0000') {
+			continue
+		}
 		result[name] = float64(data.abs.data) * math.Pow(10, -float64(data.abs.dec))
 	}
 	return result, 0
@@ -242,12 +249,15 @@ func GetRelativePositions(handle *uint16) (map[string]float64, int16) {
 	result := make(map[string]float64)
 	num := C.get_max_axis()
 	buf := make([]C.ODBPOS, int(num))
-	ret := C.cnc_rdposition(C.ushort(*handle), C.short(0), &num, (*C.ODBPOS)(unsafe.Pointer(&buf[0])))
+	ret := C.cnc_rdposition(C.ushort(*handle), C.short(2), &num, (*C.ODBPOS)(unsafe.Pointer(&buf[0])))
 	if ret != C.EW_OK {
 		return result, int16(ret)
 	}
 	for _, data := range buf {
 		name := string(byte(data.rel.name))
+		if name == "" || strings.ContainsRune(name, '\u0000') {
+			continue
+		}
 		result[name] = float64(data.rel.data) * math.Pow(10, -float64(data.rel.dec))
 	}
 	return result, 0
@@ -257,12 +267,15 @@ func GetMachinePositions(handle *uint16) (map[string]float64, int16) {
 	result := make(map[string]float64)
 	num := C.get_max_axis()
 	buf := make([]C.ODBPOS, int(num))
-	ret := C.cnc_rdposition(C.ushort(*handle), C.short(0), &num, (*C.ODBPOS)(unsafe.Pointer(&buf[0])))
+	ret := C.cnc_rdposition(C.ushort(*handle), C.short(1), &num, (*C.ODBPOS)(unsafe.Pointer(&buf[0])))
 	if ret != C.EW_OK {
 		return result, int16(ret)
 	}
 	for _, data := range buf {
 		name := string(byte(data.mach.name))
+		if name == "" || strings.ContainsRune(name, '\u0000') {
+			continue
+		}
 		result[name] = float64(data.mach.data) * math.Pow(10, -float64(data.mach.dec))
 	}
 	return result, 0
@@ -309,6 +322,9 @@ func GetJogSpeed(handle *uint16) (map[string]float64, int16) {
 		flag = (int16(axis_data.flag) >> 1) & 1
 		if flag == 0 {
 			name := C.GoString((*C.char)(unsafe.Pointer(&axis_data.name[0])))
+			if name == "" || strings.ContainsRune(name, '\u0000') {
+				continue
+			}
 			result[name] = float64(axis_data.data) * math.Pow(10, -float64(axis_data.dec))
 		}
 	}
@@ -325,6 +341,9 @@ func GetServoLoad(handle *uint16) (map[string]int64, int16) {
 	}
 	for _, axis_data := range buf {
 		name := string(byte(axis_data.svload.name))
+		if name == "" || strings.ContainsRune(name, '\u0000') {
+			continue
+		}
 		result[name] = int64(axis_data.svload.data)
 	}
 	return result, 0
@@ -341,6 +360,9 @@ func GetServoCurrentLoad(handle *uint16) (map[string]float64, int16) {
 	}
 	for _, axis_data := range buf {
 		name := C.GoString((*C.char)(unsafe.Pointer(&axis_data.name[0])))
+		if name == "" || strings.ContainsRune(name, '\u0000') {
+			continue
+		}
 		result[name] = float64(axis_data.data) * math.Pow(10, -float64(axis_data.dec))
 	}
 	return result, 0
@@ -357,6 +379,9 @@ func GetServoCurrentLoadPercent(handle *uint16) (map[string]int64, int16) {
 	}
 	for _, axis_data := range buf {
 		name := C.GoString((*C.char)(unsafe.Pointer(&axis_data.name[0])))
+		if name == "" || strings.ContainsRune(name, '\u0000') {
+			continue
+		}
 		result[name] = int64(axis_data.data)
 	}
 	return result, 0
@@ -384,6 +409,9 @@ func GetSpindleSpeedParam(handle *uint16) (map[string]int64, int16) {
 	}
 	for _, axis_data := range buf {
 		name := C.GoString((*C.char)(unsafe.Pointer(&axis_data.name[0])))
+		if name == "" || strings.ContainsRune(name, '\u0000') {
+			continue
+		}
 		result[name] = int64(axis_data.data)
 	}
 	return result, 0
@@ -393,12 +421,15 @@ func GetSpindleMotorSpeed(handle *uint16) (map[string]int64, int16) {
 	result := make(map[string]int64)
 	num := C.get_max_spindles()
 	buf := make([]C.ODBSPLOAD, num)
-	ret := C.cnc_rdspmeter(C.ushort(*handle), 1, &num, (*C.ODBSPLOAD)(unsafe.Pointer(&buf[0])))
+	ret := C.cnc_rdspmeter(C.ushort(*handle), C.short(1), &num, (*C.ODBSPLOAD)(unsafe.Pointer(&buf[0])))
 	if ret != C.EW_OK {
 		return result, int16(ret)
 	}
 	for _, spindle_data := range buf {
 		name := string(byte(spindle_data.spspeed.name)) + string(byte(spindle_data.spspeed.suff1))
+		if name == "" || strings.ContainsRune(name, '\u0000') {
+			continue
+		}
 		result[name] = int64(spindle_data.spspeed.data)
 	}
 	return result, 0
@@ -408,12 +439,15 @@ func GetSpindleLoad(handle *uint16) (map[string]int64, int16) {
 	result := make(map[string]int64)
 	num := C.get_max_spindles()
 	buf := make([]C.ODBSPLOAD, num)
-	ret := C.cnc_rdspmeter(C.ushort(*handle), 0, &num, (*C.ODBSPLOAD)(unsafe.Pointer(&buf[0])))
+	ret := C.cnc_rdspmeter(C.ushort(*handle), C.short(0), &num, (*C.ODBSPLOAD)(unsafe.Pointer(&buf[0])))
 	if ret != C.EW_OK {
 		return result, int16(ret)
 	}
 	for _, spindle_data := range buf {
 		name := string(byte(spindle_data.spload.name)) + string(byte(spindle_data.spload.suff1))
+		if name == "" || strings.ContainsRune(name, '\u0000') {
+			continue
+		}
 		result[name] = int64(spindle_data.spload.data)
 	}
 	return result, 0
@@ -451,7 +485,7 @@ func GetAlarm(handle *uint16) (int16, int16) {
 // Operating functions
 func GetPowerOnTime(handle *uint16) (int64, int16) {
 	var buf C.IODBPSD
-	ret := C.cnc_rdparam(C.ushort(*handle), 6750, -1, C.short(unsafe.Sizeof(buf)), &buf)
+	ret := C.cnc_rdparam(C.ushort(*handle), C.short(6750), C.short(-1), C.short(unsafe.Sizeof(buf)), &buf)
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
@@ -461,13 +495,13 @@ func GetPowerOnTime(handle *uint16) (int64, int16) {
 
 func GetOperationTime(handle *uint16) (float64, int16) {
 	var buf_1 C.IODBPSD
-	ret := C.cnc_rdparam(C.ushort(*handle), 6751, -1, C.short(unsafe.Sizeof(buf_1)), &buf_1)
+	ret := C.cnc_rdparam(C.ushort(*handle), C.short(6751), C.short(-1), C.short(unsafe.Sizeof(buf_1)), &buf_1)
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
 	rdata_1 := (*C.REALPRM)(unsafe.Pointer(&buf_1.u[0]))
 	var buf_2 C.IODBPSD
-	ret = C.cnc_rdparam(C.ushort(*handle), 6752, -1, C.short(unsafe.Sizeof(buf_2)), &buf_2)
+	ret = C.cnc_rdparam(C.ushort(*handle), C.short(6752), C.short(-1), C.short(unsafe.Sizeof(buf_2)), &buf_2)
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
@@ -477,13 +511,13 @@ func GetOperationTime(handle *uint16) (float64, int16) {
 
 func GetCuttingTime(handle *uint16) (float64, int16) {
 	var buf_1 C.IODBPSD
-	ret := C.cnc_rdparam(C.ushort(*handle), 6753, -1, C.short(unsafe.Sizeof(buf_1)), &buf_1)
+	ret := C.cnc_rdparam(C.ushort(*handle), C.short(6753), C.short(-1), C.short(unsafe.Sizeof(buf_1)), &buf_1)
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
 	rdata_1 := (*C.REALPRM)(unsafe.Pointer(&buf_1.u[0]))
 	var buf_2 C.IODBPSD
-	ret = C.cnc_rdparam(C.ushort(*handle), 6754, -1, C.short(unsafe.Sizeof(buf_2)), &buf_2)
+	ret = C.cnc_rdparam(C.ushort(*handle), C.short(6754), C.short(-1), C.short(unsafe.Sizeof(buf_2)), &buf_2)
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
@@ -493,13 +527,13 @@ func GetCuttingTime(handle *uint16) (float64, int16) {
 
 func GetCycleTime(handle *uint16) (float64, int16) {
 	var buf_1 C.IODBPSD
-	ret := C.cnc_rdparam(C.ushort(*handle), 6757, -1, C.short(unsafe.Sizeof(buf_1)), &buf_1)
+	ret := C.cnc_rdparam(C.ushort(*handle), C.short(6757), C.short(-1), C.short(unsafe.Sizeof(buf_1)), &buf_1)
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
 	rdata_1 := (*C.REALPRM)(unsafe.Pointer(&buf_1.u[0]))
 	var buf_2 C.IODBPSD
-	ret = C.cnc_rdparam(C.ushort(*handle), 6758, -1, C.short(unsafe.Sizeof(buf_2)), &buf_2)
+	ret = C.cnc_rdparam(C.ushort(*handle), C.short(6758), C.short(-1), C.short(unsafe.Sizeof(buf_2)), &buf_2)
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
@@ -554,7 +588,7 @@ func GetCtrlPathsNumber(handle *uint16) (int16, int16) {
 
 func GetSerialNumber(handle *uint16) (int64, int16) {
 	var buf C.IODBPSD
-	ret := C.cnc_rdparam(C.ushort(*handle), 13151, -1, C.short(unsafe.Sizeof(buf)), &buf)
+	ret := C.cnc_rdparam(C.ushort(*handle), C.short(13151), C.short(-1), C.short(unsafe.Sizeof(buf)), &buf)
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
@@ -568,5 +602,5 @@ func GetCncId(handle *uint16) (string, int16) {
 	if ret != C.EW_OK {
 		return "", int16(ret)
 	}
-	return fmt.Sprintf("%08x-%08x-%08x-%08x", cnc_ids[0], cnc_ids[1], cnc_ids[2], cnc_ids[3]), 0
+	return fmt.Sprintf("%08X-%08X-%08X-%08X", cnc_ids[0], cnc_ids[1], cnc_ids[2], cnc_ids[3]), 0
 }

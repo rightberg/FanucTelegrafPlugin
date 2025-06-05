@@ -163,6 +163,9 @@ func UpdateCollector(json_data string) {
 		default:
 			continue
 		}
+		if converted_value == nil {
+			continue
+		}
 		UpdateNodeValueAtAddress(node_ns, device_address+"/"+tag_name, converted_value)
 	}
 }
@@ -332,7 +335,6 @@ func InitServer() {
 }
 
 func StartServer() {
-	InitServer()
 	if err := _server.Start(context.Background()); err != nil {
 		logger.Panicf("Ошибка запуска сервера %v", err)
 	}

@@ -69,15 +69,6 @@ func EndPlugin() {
 	FreeAllHandles(handles)
 }
 
-func OutputFanucData(json_data *string) {
-	if json.Valid([]byte(*json_data)) {
-		if config.Server.Status {
-			UpdateCollector(*json_data)
-		}
-		fmt.Fprintln(os.Stdout, *json_data)
-	}
-}
-
 func InitCrashLog() {
 	if r := recover(); r != nil && log_buf.Len() > 0 {
 		logger.Println("Panic:", r)
@@ -102,6 +93,15 @@ func InitLogFile() {
 		logger.Println(string(trace))
 		log_file.Close()
 		os.Exit(1)
+	}
+}
+
+func OutputFanucData(json_data string) {
+	if json.Valid([]byte(json_data)) {
+		if config.Server.Status && json_data != "" {
+			UpdateCollector(json_data)
+		}
+		fmt.Fprintln(os.Stdout, json_data)
 	}
 }
 
@@ -161,6 +161,7 @@ func main() {
 
 	if config.Server.Status {
 		LoadTagPacks()
+		InitServer()
 		go StartServer()
 	}
 

@@ -197,7 +197,10 @@ func InitServer() {
 
 	var opts []server.Option
 
-	security_options := GetPoliciesOptions(config.Server.Security, available_policies, available_sec_modes)
+	security_options := GetPoliciesOptions(
+		config.Server.Security,
+		available_policies,
+		available_sec_modes)
 	if security_options == nil {
 		opts = append(opts, server.EnableSecurity("None", ua.MessageSecurityModeNone))
 	} else {
@@ -233,6 +236,7 @@ func InitServer() {
 	cert_pem_path := filepath.Join(plugin_dir, *certfile)
 	cert_der_path := filepath.Join(plugin_dir, "cert.der")
 	key_pem_path := filepath.Join(plugin_dir, *keyfile)
+
 	if make_cert {
 		var endpoints_str []string
 		if endpoints == nil {

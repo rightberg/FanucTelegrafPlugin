@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -70,10 +72,30 @@ func TryFreeExtraHandles(file_dir string) {
 	}
 }
 
-func FanucDataCollector(device Device, timeout int, global_handle *uint16, running *bool, wait_group *sync.WaitGroup) {
+func FormatAddress(ip string, port int) string {
+	parsed_ip := net.ParseIP(ip)
+	if parsed_ip == nil {
+		return fmt.Sprintf("%s:%d", ip, port)
+	}
+	// IPv6
+	if parsed_ip.To4() == nil {
+		return fmt.Sprintf("[%s]:%d", ip, port)
+	}
+	// IPv4
+	return fmt.Sprintf("%s:%d", ip, port)
+}
+
+func IsConnectAlive(ip string, port int, timeout time.Duration) bool {
+	conn, err := net.DialTimeout("tcp", FormatAddress(ip, port), timeout)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+func DataCollector(device Device, timeout int, global_handle *uint16, running *bool, wait_group *sync.WaitGroup) {
 	defer wait_group.Done()
-	// extra parameters
-	power_on := 1
 	stacked_handle := uint16(0)
 	var free_handle_error int16
 	var handle uint16
@@ -83,30 +105,33 @@ func FanucDataCollector(device Device, timeout int, global_handle *uint16, runni
 		if stacked_handle != 0 {
 			free_handle_error = FreeHandle(&stacked_handle)
 			if free_handle_error == 0 || free_handle_error == -8 {
+				logger.Printf("Освобождения дескриптора %d: успешно", stacked_handle)
 				stacked_handle = 0
-				logger.Println("Освобождение дескриптора: успешно")
 			}
 			time.Sleep(time.Duration(10) * time.Second)
 		} else {
-			handle, handle_error = GetHandle(device.Address, device.Port, timeout)
+			if !IsConnectAlive(device.Address, device.Port, 10*time.Second) {
+				logger.Println("Устройство недоступно проверьте питание и параметры TCP соединения")
+				OutputFanucData(GetPowerOffData(&device))
+				time.Sleep(10 * time.Second)
+				continue
+			}
+			handle, handle_error = GetHandleWithTimeout(device.Address, device.Port, timeout)
 			switch handle_error {
 			case 0:
-				*global_handle = handle
-				power_on = 1
+				if handle == 0 {
+					continue
+				}
 				json_data = GetFanucJsonData(&device, &handle, &handle_error)
 				OutputFanucData(json_data)
+				*global_handle = handle
 				free_handle_error = FreeHandle(&handle)
-				if free_handle_error != 0 && stacked_handle == 0 && handle != 0 {
+				if free_handle_error != 0 {
 					stacked_handle = handle
-					logger.Printf("Ошибка освобождения дескриптора, handle: %d, error: %d \n", handle, free_handle_error)
+					logger.Println("Ошибка освобождения дескриптора, error: ", free_handle_error)
 				}
 			case -16:
-				if power_on == 1 {
-					logger.Println("Отсутсвует питание устройства (EW_SOCKET: -16)")
-					json_data = GetDefaultJsonData(&device, &handle, &handle_error)
-					OutputFanucData(json_data)
-					power_on = 0
-				}
+				OutputFanucData(GetPowerOffData(&device))
 			default:
 				logger.Println("Ошибка получения дескриптора, error: ", handle_error)
 			}
@@ -115,17 +140,13 @@ func FanucDataCollector(device Device, timeout int, global_handle *uint16, runni
 	}
 }
 
-func GetDefaultJsonData(device *Device, handle *uint16, handle_error *int16) string {
+func GetPowerOffData(device *Device) string {
 	tag_map := make(map[string]any)
 	// default tags
 	tag_map["name"] = device.Name
 	tag_map["address"] = device.Address
 	tag_map["port"] = device.Port
-	if *handle_error == -16 {
-		tag_map["power_on"] = 0
-	} else {
-		tag_map["power_on"] = 1
-	}
+	tag_map["power_on"] = 0
 	json_data, err := json.Marshal(tag_map)
 	if err != nil {
 		return ""
@@ -178,6 +199,10 @@ func GetFanucJsonData(device *Device, handle *uint16, handle_error *int16) strin
 			tag_map["frame_number"], errors["frame_number"] = GetFrameNumber(handle)
 		case "feedrate":
 			tag_map["feedrate"], errors["feedrate"] = GetFeedRate(handle)
+		case "feedrate_prg":
+			tag_map["feedrate_prg"], errors["feedrate_prg"] = GetFeedRateParam1(handle)
+		case "feedrate_note":
+			tag_map["feedrate_note"], errors["feedrate_note"] = GetFeedRateParam2(handle)
 		case "feed_override":
 			tag_map["feed_override"], errors["feed_override"] = GetFeedOverride(handle)
 		case "jog_override":

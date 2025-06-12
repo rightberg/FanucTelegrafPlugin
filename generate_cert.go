@@ -71,15 +71,15 @@ func GenerateCert(host []string, rsaBits int, validFor time.Duration) (certPEM, 
 		}
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey(priv), priv)
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, PublicKey(priv), priv)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create certificate: %s", err)
 	}
 
-	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}), pem.EncodeToMemory(pemBlockForKey(priv)), nil
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}), pem.EncodeToMemory(PemBlockForKey(priv)), nil
 }
 
-func publicKey(priv interface{}) interface{} {
+func PublicKey(priv interface{}) interface{} {
 	switch k := priv.(type) {
 	case *rsa.PrivateKey:
 		return &k.PublicKey
@@ -90,7 +90,7 @@ func publicKey(priv interface{}) interface{} {
 	}
 }
 
-func pemBlockForKey(priv interface{}) *pem.Block {
+func PemBlockForKey(priv interface{}) *pem.Block {
 	switch k := priv.(type) {
 	case *rsa.PrivateKey:
 		return &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(k)}

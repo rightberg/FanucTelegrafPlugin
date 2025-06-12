@@ -172,7 +172,8 @@ func main() {
 	for index, device := range config.Devices {
 		wait_group.Add(1)
 		handles[index] = 0
-		go FanucDataCollector(device, config.HandleTimeout, &handles[index], &running, &wait_group)
+		go DataCollector(device, config.HandleTimeout, &handles[index], &running, &wait_group)
+		time.Sleep(time.Duration(100) * time.Millisecond)
 	}
 
 	go func() {

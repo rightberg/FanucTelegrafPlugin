@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 	"unsafe"
 )
 
@@ -35,8 +36,31 @@ func GetHandle(address string, port int, timeout int) (uint16, int16) {
 	return uint16(handle), 0
 }
 
+func GetHandleWithTimeout(address string, port int, timeout int) (uint16, int16) {
+	result := make(chan struct {
+		handle uint16
+		err    int16
+	}, 1)
+
+	go func() {
+		handle, err := GetHandle(address, port, timeout)
+		result <- struct {
+			handle uint16
+			err    int16
+		}{handle, err}
+	}()
+
+	select {
+	case res := <-result:
+		return res.handle, res.err
+	case <-time.After(time.Duration(timeout+5) * time.Second):
+		return 0, -99
+	}
+}
+
 func FreeHandle(handle *uint16) int16 {
-	return int16(C.cnc_freelibhndl(C.ushort(*handle)))
+	ret := C.cnc_freelibhndl(C.ushort(*handle))
+	return int16(ret)
 }
 
 // Mode functions
@@ -281,13 +305,51 @@ func GetMachinePositions(handle *uint16) (map[string]float64, int16) {
 	return result, 0
 }
 
-func GetFeedRate(handle *uint16) (int64, int16) {
-	var buf C.ODBACT
-	ret := C.cnc_actf(C.ushort(*handle), &buf)
+func GetFeedRate(handle *uint16) (float64, int16) {
+	var buf C.ODBSPEED
+	ret := C.cnc_rdspeed(C.ushort(*handle), C.short(0), &buf)
 	if ret != C.EW_OK {
 		return 0, int16(ret)
 	}
-	return int64(buf.data), 0
+	return float64(buf.actf.data) * math.Pow(10, -float64(buf.actf.dec)), 0
+}
+
+func GetFeedRateParam1(handle *uint16) (map[string]float64, int16) {
+	result := make(map[string]float64)
+	num := C.get_max_spindles()
+	buf := make([]C.ODBAXDT, int(num))
+	var types [1]C.short = [1]C.short{0}
+	ret := C.cnc_rdaxisdata(C.ushort(*handle), C.short(5), &types[0], C.short(1), &num, (*C.ODBAXDT)(unsafe.Pointer(&buf[0])))
+	if ret != C.EW_OK {
+		return result, int16(ret)
+	}
+	for _, axis_data := range buf {
+		name := C.GoString((*C.char)(unsafe.Pointer(&axis_data.name[0])))
+		if name == "" || strings.ContainsRune(name, '\u0000') {
+			continue
+		}
+		result[name] = float64(axis_data.data) * math.Pow(10, -float64(axis_data.dec))
+	}
+	return result, 0
+}
+
+func GetFeedRateParam2(handle *uint16) (map[string]float64, int16) {
+	result := make(map[string]float64)
+	num := C.get_max_spindles()
+	buf := make([]C.ODBAXDT, int(num))
+	var types [1]C.short = [1]C.short{5}
+	ret := C.cnc_rdaxisdata(C.ushort(*handle), C.short(5), &types[0], C.short(1), &num, (*C.ODBAXDT)(unsafe.Pointer(&buf[0])))
+	if ret != C.EW_OK {
+		return result, int16(ret)
+	}
+	for _, axis_data := range buf {
+		name := C.GoString((*C.char)(unsafe.Pointer(&axis_data.name[0])))
+		if name == "" || strings.ContainsRune(name, '\u0000') {
+			continue
+		}
+		result[name] = float64(axis_data.data) * math.Pow(10, -float64(axis_data.dec))
+	}
+	return result, 0
 }
 
 func GetFeedOverride(handle *uint16) (int16, int16) {

@@ -85,58 +85,138 @@ func FormatAddress(ip string, port int) string {
 	return fmt.Sprintf("%s:%d", ip, port)
 }
 
-func IsConnectAlive(ip string, port int, timeout time.Duration) bool {
-	conn, err := net.DialTimeout("tcp", FormatAddress(ip, port), timeout)
-	if err != nil {
-		return false
+func IsConnectAlive(ip string, port int, timeout time.Duration, running *bool) bool {
+	done := make(chan bool, 1)
+
+	go func() {
+		conn, err := net.DialTimeout("tcp", FormatAddress(ip, port), timeout)
+		if err != nil {
+			done <- false
+			return
+		}
+		conn.Close()
+		done <- true
+	}()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case result := <-done:
+			return result
+		case <-ticker.C:
+			if !*running {
+				return false
+			}
+		}
 	}
-	conn.Close()
-	return true
 }
 
-func DataCollector(device Device, timeout int, global_handle *uint16, running *bool, wait_group *sync.WaitGroup) {
+func StartDataCollector(device Device, timeout int, global_handle *uint16, running *bool, wait_group *sync.WaitGroup) {
 	defer wait_group.Done()
-	stacked_handle := uint16(0)
-	var free_handle_error int16
-	var handle uint16
-	var handle_error int16
-	var json_data string
 	for *running {
-		if stacked_handle != 0 {
-			free_handle_error = FreeHandle(&stacked_handle)
-			if free_handle_error == 0 || free_handle_error == -8 {
-				logger.Printf("Освобождения дескриптора %d: успешно", stacked_handle)
-				stacked_handle = 0
+		var local_wg sync.WaitGroup
+		local_wg.Add(1)
+		go func() {
+			defer local_wg.Done()
+			DataCollector(device, timeout, global_handle, running)
+		}()
+		local_wg.Wait()
+		for i := 0; i < 100; i++ {
+			if !*running {
+				return
 			}
-			time.Sleep(time.Duration(10) * time.Second)
-		} else {
-			if !IsConnectAlive(device.Address, device.Port, 10*time.Second) {
-				logger.Println("Устройство недоступно проверьте питание и параметры TCP соединения")
-				OutputFanucData(GetPowerOffData(&device))
-				time.Sleep(10 * time.Second)
-				continue
-			}
-			handle, handle_error = GetHandleWithTimeout(device.Address, device.Port, timeout)
-			switch handle_error {
-			case 0:
-				if handle == 0 {
-					continue
-				}
-				json_data = GetFanucJsonData(&device, &handle, &handle_error)
-				OutputFanucData(json_data)
-				*global_handle = handle
-				free_handle_error = FreeHandle(&handle)
-				if free_handle_error != 0 {
-					stacked_handle = handle
-					logger.Println("Ошибка освобождения дескриптора, error: ", free_handle_error)
-				}
-			case -16:
-				OutputFanucData(GetPowerOffData(&device))
-			default:
-				logger.Println("Ошибка получения дескриптора, error: ", handle_error)
-			}
-			time.Sleep(time.Duration(device.DelayMs) * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 		}
+	}
+}
+
+func DataCollector(device Device, timeout int, global_handle *uint16, running *bool) {
+	var handle uint16 = 0
+	var handle_error int16 = 0
+	var json_data string
+	reconnect_counter := 0
+	max_reconnect := 5
+	// free handle
+	defer func() {
+		if handle != 0 {
+			free_handle_error := FreeHandle(&handle)
+			if free_handle_error != 0 && free_handle_error != -8 {
+				logger.Printf("Ошибка освобождения дескриптора %s, error: %d", device.Name, free_handle_error)
+			} else {
+				*global_handle = 0
+			}
+		}
+	}()
+	connect_count := 0
+	max_connect := 5
+	get_handle_count := 0
+	max_get_handle := 5
+	// pull default data
+	OutputFanucData(GetPowerOffData(&device))
+	// try connect to device
+	for connect_count <= max_connect {
+		connect_count++
+		if IsConnectAlive(device.Address, device.Port, 10*time.Second, running) {
+			connect_count = 0
+			break
+		}
+		if connect_count >= max_connect {
+			logger.Printf("Устройство %s недоступно проверьте питание и параметры TCP соединения \n", device.Name)
+			OutputFanucData(GetPowerOffData(&device))
+			return
+		}
+	}
+	//try free handle
+	handle = *global_handle
+	if handle != 0 {
+		free_handle_error := FreeHandle(&handle)
+		if free_handle_error != 0 && free_handle_error != -8 {
+			logger.Printf("Ошибка освобождения дескриптора %s, error: %d", device.Name, free_handle_error)
+		} else {
+			*global_handle = 0
+			handle = 0
+		}
+	}
+	// try get handle
+	for get_handle_count <= max_get_handle {
+		get_handle_count++
+		handle, handle_error = GetHandleWithTimeout(device.Address, device.Port, timeout)
+		if handle_error == 0 {
+			get_handle_count = 0
+			*global_handle = handle
+			break
+		}
+		if get_handle_count >= max_get_handle {
+			logger.Println("Ошибка получения дескриптора, error: ", handle_error)
+			OutputFanucData(GetPowerOffData(&device))
+			return
+		}
+	}
+	// collect data
+	protocol_error := false
+	for *running {
+		if !IsConnectAlive(device.Address, device.Port, 10*time.Second, running) {
+			reconnect_counter++
+			if reconnect_counter >= max_reconnect {
+				OutputFanucData(GetPowerOffData(&device))
+				logger.Println("Попытка перезапустить поток, device: ", device.Name)
+				return
+			}
+			continue
+		}
+		json_data = GetFanucJsonData(&device, &handle, &protocol_error)
+		OutputFanucData(json_data)
+		if protocol_error {
+			reconnect_counter++
+			if reconnect_counter >= max_reconnect {
+				OutputFanucData(GetPowerOffData(&device))
+				logger.Println("Попытка перезапустить поток, device: ", device.Name)
+				return
+			}
+		}
+		time.Sleep(time.Duration(device.DelayMs) * time.Millisecond)
 	}
 }
 
@@ -154,109 +234,110 @@ func GetPowerOffData(device *Device) string {
 	return string(json_data)
 }
 
-func GetFanucJsonData(device *Device, handle *uint16, handle_error *int16) string {
+func GetFanucJsonData(device *Device, handle *uint16, protocol_error *bool) string {
 	tag_map := make(map[string]any)
 	// default tags
 	tag_map["name"] = device.Name
 	tag_map["address"] = device.Address
 	tag_map["port"] = device.Port
-	if *handle_error == -16 {
-		tag_map["power_on"] = 0
-	} else {
-		tag_map["power_on"] = 1
-	}
+	tag_map["power_on"] = 1
 	// scan tags
+	*protocol_error = false
 	errors := make(map[string]int16)
 	for _, tag := range device.TagsPack {
 		switch tag {
 		case "aut":
-			tag_map["aut"], errors["aut"] = GetAut(handle)
+			tag_map[tag], errors[tag] = GetAut(handle)
 		case "run":
-			tag_map["run"], errors["run"] = GetRun(handle)
+			tag_map[tag], errors[tag] = GetRun(handle)
 		case "edit":
-			tag_map["edit"], errors["edit"] = GetEdit(handle)
+			tag_map[tag], errors[tag] = GetEdit(handle)
 		case "g00":
-			tag_map["g00"], errors["g00"] = GetG00(handle)
+			tag_map[tag], errors[tag] = GetG00(handle)
 		case "shutdowns":
-			tag_map["shutdowns"], errors["shutdowns"] = GetShutdowns(handle)
+			tag_map[tag], errors[tag] = GetShutdowns(handle)
 		case "motion":
-			tag_map["motion"], errors["motion"] = GetMotion(handle)
+			tag_map[tag], errors[tag] = GetMotion(handle)
 		case "mstb":
-			tag_map["mstb"], errors["mstb"] = GetMstb(handle)
+			tag_map[tag], errors[tag] = GetMstb(handle)
 		case "load_excess":
-			tag_map["load_excess"], errors["load_excess"] = GetLoadExcess(handle)
+			tag_map[tag], errors[tag] = GetLoadExcess(handle)
 		case "frame":
-			tag_map["frame"], errors["frame"] = GetFrame(handle)
+			tag_map[tag], errors[tag] = GetFrame(handle)
 		case "main_prog_number":
-			tag_map["main_prog_number"], errors["main_prog_number"] = GetMainProgNum(handle)
+			tag_map[tag], errors[tag] = GetMainProgNum(handle)
 		case "sub_prog_number":
-			tag_map["sub_prog_number"], errors["sub_prog_number"] = GetSubProgNum(handle)
+			tag_map[tag], errors[tag] = GetSubProgNum(handle)
 		case "parts_count":
-			tag_map["parts_count"], errors["parts_count"] = GetPartsCount(handle)
+			tag_map[tag], errors[tag] = GetPartsCount(handle)
 		case "tool_number":
-			tag_map["tool_number"], errors["tool_number"] = GetToolNumber(handle)
+			tag_map[tag], errors[tag] = GetToolNumber(handle)
 		case "frame_number":
-			tag_map["frame_number"], errors["frame_number"] = GetFrameNumber(handle)
+			tag_map[tag], errors[tag] = GetFrameNumber(handle)
 		case "feedrate":
-			tag_map["feedrate"], errors["feedrate"] = GetFeedRate(handle)
+			tag_map[tag], errors[tag] = GetFeedRate(handle)
 		case "feedrate_prg":
-			tag_map["feedrate_prg"], errors["feedrate_prg"] = GetFeedRateParam1(handle)
+			tag_map[tag], errors[tag] = GetFeedRateParam1(handle)
 		case "feedrate_note":
-			tag_map["feedrate_note"], errors["feedrate_note"] = GetFeedRateParam2(handle)
+			tag_map[tag], errors[tag] = GetFeedRateParam2(handle)
 		case "feed_override":
-			tag_map["feed_override"], errors["feed_override"] = GetFeedOverride(handle)
+			tag_map[tag], errors[tag] = GetFeedOverride(handle)
 		case "jog_override":
-			tag_map["jog_override"], errors["jog_override"] = GetJogOverride(handle)
+			tag_map[tag], errors[tag] = GetJogOverride(handle)
 		case "jog_speed":
-			tag_map["jog_speed"], errors["jog_speed"] = GetJogSpeed(handle)
+			tag_map[tag], errors[tag] = GetJogSpeed(handle)
 		case "current_load":
-			tag_map["current_load"], errors["current_load"] = GetServoCurrentLoad(handle)
+			tag_map[tag], errors[tag] = GetServoCurrentLoad(handle)
 		case "current_load_percent":
-			tag_map["current_load_percent"], errors["current_load_percent"] = GetServoCurrentLoadPercent(handle)
+			tag_map[tag], errors[tag] = GetServoCurrentLoadPercent(handle)
 		case "servo_loads":
-			tag_map["servo_loads"], errors["servo_loads"] = GetServoLoad(handle)
+			tag_map[tag], errors[tag] = GetServoLoad(handle)
 		case "absolute_positions":
-			tag_map["absolute_positions"], errors["absolute_positions"] = GetAbsolutePositions(handle)
+			tag_map[tag], errors[tag] = GetAbsolutePositions(handle)
 		case "machine_positions":
-			tag_map["machine_positions"], errors["machine_positions"] = GetMachinePositions(handle)
+			tag_map[tag], errors[tag] = GetMachinePositions(handle)
 		case "relative_positions":
-			tag_map["relative_positions"], errors["relative_positions"] = GetRelativePositions(handle)
+			tag_map[tag], errors[tag] = GetRelativePositions(handle)
 		case "spindle_speed":
-			tag_map["spindle_speed"], errors["spindle_speed"] = GetSpindleSpeed(handle)
+			tag_map[tag], errors[tag] = GetSpindleSpeed(handle)
 		case "spindle_param_speed":
-			tag_map["spindle_param_speed"], errors["spindle_param_speed"] = GetSpindleSpeedParam(handle)
+			tag_map[tag], errors[tag] = GetSpindleSpeedParam(handle)
 		case "spindle_motor_speed":
-			tag_map["spindle_motor_speed"], errors["spindle_motor_speed"] = GetSpindleMotorSpeed(handle)
+			tag_map[tag], errors[tag] = GetSpindleMotorSpeed(handle)
 		case "spindle_load":
-			tag_map["spindle_load"], errors["spindle_load"] = GetSpindleLoad(handle)
+			tag_map[tag], errors[tag] = GetSpindleLoad(handle)
 		case "spindle_override":
-			tag_map["spindle_override"], errors["spindle_override"] = GetSpindleOverride(handle)
+			tag_map[tag], errors[tag] = GetSpindleOverride(handle)
 		case "emergency":
-			tag_map["emergency"], errors["emergency"] = GetEmergency(handle)
+			tag_map[tag], errors[tag] = GetEmergency(handle)
 		case "alarm":
-			tag_map["alarm"], errors["alarm"] = GetAlarm(handle)
+			tag_map[tag], errors[tag] = GetAlarm(handle)
 		case "axes_number":
-			tag_map["axes_number"], errors["axes_number"] = GetCtrlAxesNumber(handle)
+			tag_map[tag], errors[tag] = GetCtrlAxesNumber(handle)
 		case "spindles_number":
-			tag_map["spindles_number"], errors["spindles_number"] = GetCtrlSpindlesNumber(handle)
+			tag_map[tag], errors[tag] = GetCtrlSpindlesNumber(handle)
 		case "channels_number":
-			tag_map["channels_number"], errors["channels_number"] = GetCtrlPathsNumber(handle)
+			tag_map[tag], errors[tag] = GetCtrlPathsNumber(handle)
 		case "power_on_time":
-			tag_map["power_on_time"], errors["power_on_time"] = GetPowerOnTime(handle)
+			tag_map[tag], errors[tag] = GetPowerOnTime(handle)
 		case "operation_time":
-			tag_map["operation_time"], errors["operation_time"] = GetOperationTime(handle)
+			tag_map[tag], errors[tag] = GetOperationTime(handle)
 		case "cutting_time":
-			tag_map["cutting_time"], errors["cutting_time"] = GetCuttingTime(handle)
+			tag_map[tag], errors[tag] = GetCuttingTime(handle)
 		case "cycle_time":
-			tag_map["cycle_time"], errors["cycle_time"] = GetCycleTime(handle)
+			tag_map[tag], errors[tag] = GetCycleTime(handle)
 		case "series_number":
-			tag_map["series_number"], errors["series_number"] = GetSeriesNumber(handle)
+			tag_map[tag], errors[tag] = GetSeriesNumber(handle)
 		case "version_number":
-			tag_map["version_number"], errors["version_number"] = GetVersionNumber(handle)
+			tag_map[tag], errors[tag] = GetVersionNumber(handle)
 		case "serial_number":
-			tag_map["serial_number"], errors["serial_number"] = GetSerialNumber(handle)
+			tag_map[tag], errors[tag] = GetSerialNumber(handle)
 		case "cnc_id":
-			tag_map["cnc_id"], errors["cnc_id"] = GetCncId(handle)
+			tag_map[tag], errors[tag] = GetCncId(handle)
+		}
+		if error_code, ok := errors[tag]; ok && (error_code == -16 || error_code == -8) {
+			*protocol_error = true
+			break
 		}
 	}
 	// clear error data
